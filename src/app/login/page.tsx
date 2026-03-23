@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import Image from "next/image";
@@ -13,17 +13,28 @@ export default function LoginPage() {
     const error = authContext.error;
     const user = authContext.user;
     const loading = authContext.loading;
+    const [isSigningIn, setIsSigningIn] = useState(false);
 
     useEffect(() => {
         if (user && !loading) {
-            router.push("/");
+            router.replace("/chamada");
         }
     }, [user, loading, router]);
 
-    if (loading) {
+    const handleSignIn = async () => {
+        setIsSigningIn(true);
+        try {
+            await authContext.signIn();
+        } catch {
+            setIsSigningIn(false);
+        }
+    };
+
+    if (loading || isSigningIn) {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-gray-50">
+            <div className="flex min-h-screen items-center justify-center bg-gray-50 flex-col gap-4">
                 <div className="w-10 h-10 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+                {isSigningIn && <p className="text-gray-500 text-sm">Autenticando...</p>}
             </div>
         );
     }
@@ -49,7 +60,7 @@ export default function LoginPage() {
                     )}
 
                     <button
-                        onClick={authContext.signIn}
+                        onClick={handleSignIn}
                         className="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 rounded-xl px-4 py-3 text-gray-700 font-medium hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors"
                     >
                         <svg className="w-5 h-5" viewBox="0 0 24 24">
