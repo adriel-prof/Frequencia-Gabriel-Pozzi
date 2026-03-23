@@ -106,7 +106,7 @@ export async function GET(request: Request) {
 
             // Ordenar por nome
             students.sort((a, b) => a.studentName.localeCompare(b.studentName)).forEach(student => {
-                htmlContent += `<li><strong>Nº ${student.studentId}</strong> - ${student.studentName}</li>`;
+                htmlContent += `<li>${student.studentName}</li>`;
             });
             htmlContent += `</ul></div>`;
         }
