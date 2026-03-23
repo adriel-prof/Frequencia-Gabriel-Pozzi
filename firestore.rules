@@ -1,0 +1,30 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Função utilitária para verificar se o usuário logado tem o domínio correto
+    function isProf() {
+      return request.auth != null && request.auth.token.email.matches('.*@prof[.]educacao[.]sp[.]gov[.]br$');
+    }
+
+    // Regras da coleção 'students'
+    match /students/{docId} {
+      allow read: if isProf();
+      allow write: if isProf() && request.auth.token.email == "gestor_email@prof.educacao.sp.gov.br"; // Futuramente ajustável 
+    }
+
+    // Regras da coleção 'attendance'
+    match /attendance/{docId} {
+      allow read: if isProf();
+      allow create: if isProf(); // Permite criar a chamada
+      allow update, delete: if false; // Professores não podem apagar/alterar depois de enviado, ou ajuste conforme a gestão desejar
+    }
+    
+    // Regras da coleção 'config'
+    match /config/{docId} {
+      allow read: if isProf();
+      allow write: if false; // Somente administradores (via console) podem alterar as configurações
+    }
+  }
+}
