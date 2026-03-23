@@ -20,9 +20,10 @@ export async function GET(request: Request) {
         }
 
         // Agrupar faltosos por turma
-        const absencesByClass: Record<string, any[]> = {};
+        type AbsenceData = { studentClass: string; studentId: number; studentName: string; status: string; };
+        const absencesByClass: Record<string, AbsenceData[]> = {};
         snapshot.docs.forEach(doc => {
-            const data = doc.data();
+            const data = doc.data() as AbsenceData;
             if (!absencesByClass[data.studentClass]) {
                 absencesByClass[data.studentClass] = [];
             }
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
         });
 
         // Buscar admins para enviar e-mail
-        let adminEmails: string[] = [];
+        const adminEmails: string[] = [];
 
         const { searchParams } = new URL(request.url);
         const targetEmail = searchParams.get('email');

@@ -5,14 +5,7 @@ import { collection, writeBatch, doc } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import Papa from "papaparse";
 
-type CSVRow = {
-    id: string | number;
-    nome: string;
-    turma: string;
-} | string[];
-
 export default function ImportPage() {
-    const [file, setFile] = useState<File | null>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [feedback, setFeedback] = useState<{ type: "success" | "error", msg: string } | null>(null);
     const [preview, setPreview] = useState<{ id: string | number, name: string, class: string }[]>([]);
@@ -21,28 +14,29 @@ export default function ImportPage() {
         setFeedback(null);
         if (e.target.files && e.target.files.length > 0) {
             const selected = e.target.files[0];
-            setFile(selected);
 
             Papa.parse(selected, {
                 header: true,
                 skipEmptyLines: true,
                 complete: (results) => {
                     const parsedData: { id: string | number, name: string, class: string }[] = [];
-                    results.data.forEach((row: any) => {
-                        let id: any = null;
-                        let name: any = null;
-                        let turma: any = null;
+                    results.data.forEach((rawRow: unknown) => {
+                        const row = rawRow as Record<string, unknown>;
+                        let id: string | number | null = null;
+                        let name: string | null = null;
+                        let turma: string | null = null;
 
                         // Varre todas as colunas recebidas limpando caracteres invisíveis (como BOM gerado pelo Excel)
                         for (const rawKey of Object.keys(row)) {
                             const cleanKey = rawKey.replace(/[\uFEFF\u200B\u200D]/g, '').trim().toLowerCase();
+                            const cellValue = row[rawKey] as string | number;
 
                             if (cleanKey === 'id' || cleanKey === 'numero' || cleanKey === 'num' || cleanKey === 'nº') {
-                                id = row[rawKey];
+                                id = cellValue;
                             } else if (cleanKey === 'nome' || cleanKey === 'name' || cleanKey === 'aluno') {
-                                name = row[rawKey];
+                                name = String(cellValue);
                             } else if (cleanKey === 'turma' || cleanKey === 'class' || cleanKey === 'classe' || cleanKey === 'serie' || cleanKey === 'série') {
-                                turma = row[rawKey];
+                                turma = String(cellValue);
                             }
                         }
 
@@ -97,7 +91,6 @@ export default function ImportPage() {
             await batch.commit();
             setFeedback({ type: "success", msg: `${count} estudantes salvos no banco de dados com sucesso!` });
             setPreview([]);
-            setFile(null);
         } catch (error) {
             console.error(error);
             setFeedback({ type: "error", msg: "Falha na sincronização com o banco de dados." });
