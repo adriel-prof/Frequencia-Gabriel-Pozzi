@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import Image from "next/image";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -31,21 +32,8 @@ export default function LoginPage() {
         <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
             <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden">
                 <div className="p-8 text-center space-y-6">
-                    <div className="bg-green-100 text-green-700 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            className="h-8 w-8"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                            />
-                        </svg>
+                    <div className="w-24 h-24 rounded-full mx-auto mb-4 bg-white shadow-sm border border-gray-100 overflow-hidden relative flex items-center justify-center">
+                        <Image src="/logo.png" alt="Logotipo da Escola" fill sizes="(max-width: 96px) 100vw, 96px" className="object-contain p-2" priority />
                     </div>
                     <h2 className="text-2xl font-bold text-gray-900 tracking-tight">
                         Chamada Escolar

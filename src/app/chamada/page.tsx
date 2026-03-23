@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { AttendanceList } from "@/components/AttendanceList";
+import Image from "next/image";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 
@@ -55,9 +56,14 @@ export default function ChamadaPage() {
 
     return (
         <div className="min-h-screen bg-gray-50">
-            <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+            <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
                 <div className="max-w-3xl mx-auto px-4 h-16 flex items-center justify-between">
-                    <h1 className="font-bold text-lg text-gray-900">Diário Escolar</h1>
+                    <div className="flex items-center gap-3">
+                        <div className="relative w-9 h-9 rounded-full bg-white border border-gray-100 overflow-hidden flex-shrink-0 shadow-sm">
+                            <Image src="/logo.png" alt="Logo" fill sizes="36px" className="object-contain p-1" />
+                        </div>
+                        <h1 className="font-bold text-lg text-gray-900">Diário Escolar</h1>
+                    </div>
                     <div className="text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full">
                         {new Date().toLocaleDateString("pt-BR")}
                     </div>
