@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, writeBatch, doc, getDoc, serverTimestamp, deleteDoc, addDoc } from "firebase/firestore";
+import { collection, writeBatch, doc, getDoc, setDoc, serverTimestamp, deleteDoc, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { useAuth } from "@/context/AuthContext";
 
@@ -10,13 +10,15 @@ type Student = {
     id: number;
     name: string;
     class: string;
+    dispensed?: boolean;
 };
 
-type AttendanceStatus = "P" | "F";
+type AttendanceStatus = "P" | "F" | "D";
 
 export function AttendanceList({ students, onSuccess }: { students: Student[], onSuccess?: () => void }) {
     const { user, role } = useAuth();
     const [attendance, setAttendance] = useState<Record<number, AttendanceStatus>>({});
+    const [dispensedStudents, setDispensedStudents] = useState<Set<number>>(new Set());
     const [isAllowed, setIsAllowed] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
@@ -54,11 +56,17 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     // Define padrão das presenças e valida regras de horário
     useEffect(() => {
         const initialAttendance: Record<number, AttendanceStatus> = {};
+        const initialDispensed = new Set<number>();
         students.forEach((s) => {
-            initialAttendance[s.id] = "P"; // Padrão
+            if (s.dispensed) {
+                initialAttendance[s.id] = "D";
+                initialDispensed.add(s.id);
+            } else {
+                initialAttendance[s.id] = "P"; // Padrão
+            }
         });
         setAttendance(initialAttendance);
-
+        setDispensedStudents(initialDispensed);
     }, [students]);
 
     useEffect(() => {
@@ -81,8 +89,35 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     }, [timeSettings]);
 
     const handleStatusChange = (id: number, status: AttendanceStatus) => {
-        if (!isAllowed) return; // Ignore input fora do horário
+        if (!isAllowed) return;
+        if (dispensedStudents.has(id)) return; // Dispensado é travado
         setAttendance((prev) => ({ ...prev, [id]: status }));
+    };
+
+    const toggleDispensa = async (student: Student) => {
+        const newDispensed = !dispensedStudents.has(student.id);
+        try {
+            // Persiste no Firestore
+            await setDoc(doc(db, "students", student.firestoreId), { dispensed: newDispensed }, { merge: true });
+
+            setDispensedStudents(prev => {
+                const next = new Set(prev);
+                if (newDispensed) {
+                    next.add(student.id);
+                } else {
+                    next.delete(student.id);
+                }
+                return next;
+            });
+
+            setAttendance(prev => ({
+                ...prev,
+                [student.id]: newDispensed ? "D" : "P"
+            }));
+        } catch (err) {
+            console.error("Erro ao alterar dispensa:", err);
+            alert("Erro ao alterar dispensa médica.");
+        }
     };
 
     const confirmDeleteStudent = async () => {
@@ -193,50 +228,71 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             )}
 
             <div className="space-y-3">
-                {students.map((student) => (
-                    <div key={student.firestoreId} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between gap-4 transition-all">
-                        <div className="flex-1 truncate">
-                            <p className="font-semibold text-gray-900 truncate">{student.name}</p>
-                            <p className="text-xs text-gray-400 flex items-center gap-2">
-                                Nº {student.id} &bull; {student.class}
-                                {role === "admin" && (
+                {students.map((student) => {
+                    const isDispensed = dispensedStudents.has(student.id);
+                    return (
+                        <div key={student.firestoreId} className={`p-4 rounded-2xl shadow-sm border flex items-center justify-between gap-4 transition-all ${isDispensed ? 'bg-gray-50 border-gray-200 opacity-70' : 'bg-white border-gray-100'}`}>
+                            <div className="flex-1 truncate">
+                                <p className={`font-semibold truncate ${isDispensed ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{student.name}</p>
+                                <p className="text-xs text-gray-400 flex items-center gap-2 flex-wrap">
+                                    Nº {student.id} &bull; {student.class}
+                                    {isDispensed && (
+                                        <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px] font-bold">DISPENSA MÉDICA</span>
+                                    )}
+                                    {role === "admin" && (
+                                        <>
+                                            &bull;
+                                            <button
+                                                onClick={() => toggleDispensa(student)}
+                                                className={`font-medium cursor-pointer ${isDispensed ? 'text-amber-600 hover:text-amber-800' : 'text-amber-500 hover:text-amber-700'}`}
+                                            >
+                                                {isDispensed ? 'Remover Dispensa' : 'Dispensa Médica'}
+                                            </button>
+                                            &bull;
+                                            <button
+                                                onClick={() => setDeleteCandidate({ id: student.firestoreId, name: student.name })}
+                                                className="text-red-500 hover:text-red-700 font-medium cursor-pointer"
+                                            >
+                                                Excluir
+                                            </button>
+                                        </>
+                                    )}
+                                </p>
+                            </div>
+
+                            <div className="flex gap-2">
+                                {isDispensed ? (
+                                    <div className="w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg bg-amber-100 text-amber-600 ring-2 ring-amber-300 ring-offset-2">
+                                        D
+                                    </div>
+                                ) : (
                                     <>
-                                        &bull;
                                         <button
-                                            onClick={() => setDeleteCandidate({ id: student.firestoreId, name: student.name })}
-                                            className="text-red-500 hover:text-red-700 font-medium cursor-pointer"
+                                            disabled={!isAllowed || isSubmitting}
+                                            onClick={() => handleStatusChange(student.id, "P")}
+                                            className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.id] === "P"
+                                                ? "bg-green-500 text-white shadow-md shadow-green-500/30 scale-105 ring-2 ring-green-600 ring-offset-2"
+                                                : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                                } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
                                         >
-                                            Excluir
+                                            P
+                                        </button>
+                                        <button
+                                            disabled={!isAllowed || isSubmitting}
+                                            onClick={() => handleStatusChange(student.id, "F")}
+                                            className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.id] === "F"
+                                                ? "bg-red-500 text-white shadow-md shadow-red-500/30 scale-105 ring-2 ring-red-600 ring-offset-2"
+                                                : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                                } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
+                                        >
+                                            F
                                         </button>
                                     </>
                                 )}
-                            </p>
+                            </div>
                         </div>
-
-                        <div className="flex gap-2">
-                            <button
-                                disabled={!isAllowed || isSubmitting}
-                                onClick={() => handleStatusChange(student.id, "P")}
-                                className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.id] === "P"
-                                    ? "bg-green-500 text-white shadow-md shadow-green-500/30 scale-105 ring-2 ring-green-600 ring-offset-2"
-                                    : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                                    } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
-                            >
-                                P
-                            </button>
-                            <button
-                                disabled={!isAllowed || isSubmitting}
-                                onClick={() => handleStatusChange(student.id, "F")}
-                                className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.id] === "F"
-                                    ? "bg-red-500 text-white shadow-md shadow-red-500/30 scale-105 ring-2 ring-red-600 ring-offset-2"
-                                    : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                                    } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
-                            >
-                                F
-                            </button>
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
             {/* Footer / Floating Actions */}
