@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { collection, writeBatch, doc } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 
+export const dynamic = 'force-dynamic';
+
 // Dados mockados baseados no cenário descrito para E.E. Gabriel Pozzi
 const MOCK_STUDENTS = [
     { "id": 1, "name": "ANTONIO CARLOS FERREIRA NETO", "class": "3ºA D.S." },
