@@ -121,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         Este site está rodando, mas não consegue se conectar ao banco de dados porque as chaves de segurança (API Keys) estão faltando.
                     </p>
                     <div className="bg-red-50 text-red-700 text-xs p-3 rounded-lg text-left font-mono break-all mb-6">
-                        Vá no painel da Vercel &gt; Settings &gt; Environment Variables. Certifique-se de adicionar todos os itens do arquivo .env.local e marque a caixa "Production", depois faça um novo Deploy.
+                        Vá no painel da Vercel &gt; Settings &gt; Environment Variables. Certifique-se de adicionar todos os itens do arquivo .env.local e marque a caixa &quot;Production&quot;, depois faça um novo Deploy.
                     </div>
                 </div>
             </div>
