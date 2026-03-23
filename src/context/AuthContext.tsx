@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { User, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { User, signInWithRedirect, signOut, onAuthStateChanged } from "firebase/auth";
 import { auth, googleProvider, db } from "@/lib/firebaseConfig";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
@@ -91,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const signIn = async () => {
         setError(null);
         try {
-            await signInWithPopup(auth, googleProvider);
+            await signInWithRedirect(auth, googleProvider);
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : "Erro ao realizar login");
         }
