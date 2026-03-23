@@ -22,6 +22,7 @@ export default function DashboardPage() {
     const [filterDate, setFilterDate] = useState(new Date().toISOString().split("T")[0]);
     const [targetEmail, setTargetEmail] = useState("");
     const [isSendingReport, setIsSendingReport] = useState(false);
+    const [selectedClass, setSelectedClass] = useState<string | null>(null);
 
     useEffect(() => {
         async function fetchRecords() {
@@ -109,21 +110,33 @@ export default function DashboardPage() {
                     />
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-2 border-t md:border-t-0 md:border-l border-gray-100 md:pl-4 pt-4 md:pt-0">
-                    <input
-                        type="email"
-                        placeholder="E-mail destinatário (Opcional)"
-                        value={targetEmail}
-                        onChange={e => setTargetEmail(e.target.value)}
-                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 min-w-[220px]"
-                    />
+                <div className="flex flex-col sm:flex-row items-center gap-3 border-t md:border-t-0 md:border-l border-gray-100 md:pl-4 pt-4 md:pt-0">
                     <button
-                        onClick={handleSendManualReport}
-                        disabled={isSendingReport}
-                        className="bg-gray-900 text-white font-medium text-sm px-4 py-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors whitespace-nowrap"
+                        onClick={() => window.open(`/print?date=${filterDate}`, '_blank')}
+                        className="bg-white border-2 border-green-500 text-green-700 font-bold px-4 py-2 rounded-lg hover:bg-green-50 transition-colors flex items-center gap-2 whitespace-nowrap shadow-sm w-full sm:w-auto justify-center"
                     >
-                        {isSendingReport ? "Enviando..." : "Enviar Relatório de Hoje"}
+                        <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                        </svg>
+                        Imprimir Placar
                     </button>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <input
+                            type="email"
+                            placeholder="Destinatário (Opcional)"
+                            value={targetEmail}
+                            onChange={e => setTargetEmail(e.target.value)}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 min-w-[200px] w-full"
+                        />
+                        <button
+                            onClick={handleSendManualReport}
+                            disabled={isSendingReport}
+                            className="bg-gray-900 text-white font-medium text-sm px-4 py-2 rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors whitespace-nowrap shadow-sm"
+                        >
+                            {isSendingReport ? "Enviando..." : "E-mail Busca Ativa"}
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -131,9 +144,60 @@ export default function DashboardPage() {
                 <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
                     <p className="text-gray-500 font-medium">Nenhuma chamada registrada para esta data.</p>
                 </div>
+            ) : !selectedClass ? (
+                <div className="space-y-6 animate-fade-in">
+                    <div className="text-center mb-8 bg-white py-10 rounded-2xl border border-gray-100 shadow-sm">
+                        <h2 className="text-2xl font-extrabold text-gray-900">Relatórios de Chamada</h2>
+                        <p className="text-gray-500 mt-2">Escolha uma turma para detalhar as presenças e faltas do dia.</p>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                        {classes.sort().map(cls => {
+                            const classRecords = filteredRecords.filter(r => r.studentClass === cls);
+                            const totalPresences = classRecords.filter(r => r.status === "P").length;
+                            const totalAbsences = classRecords.filter(r => r.status === "F").length;
+                            const percentage = totalPresences + totalAbsences > 0
+                                ? Math.round((totalPresences / (totalPresences + totalAbsences)) * 100)
+                                : 0;
+
+                            let ringColor = "group-hover:ring-red-500";
+                            let textColor = "text-red-600";
+                            if (percentage >= 95) { ringColor = "group-hover:ring-green-500"; textColor = "text-green-600"; }
+                            else if (percentage >= 85) { ringColor = "group-hover:ring-yellow-500"; textColor = "text-yellow-600"; }
+
+                            return (
+                                <button
+                                    key={cls}
+                                    onClick={() => setSelectedClass(cls)}
+                                    className={`bg-white hover:bg-gray-50 border-2 border-gray-100 rounded-2xl py-6 px-4 flex flex-col items-center justify-center shadow-sm transition-all group focus:outline-none focus:ring-2 ${ringColor}`}
+                                >
+                                    <span className="text-2xl font-black text-gray-800 transition-colors mb-2">
+                                        {cls}
+                                    </span>
+                                    <div className="flex flex-col items-center gap-1 text-sm font-medium">
+                                        <span className={textColor}>{percentage}% de Frequência</span>
+                                        <span className="text-gray-400 text-xs">{totalPresences} P / {totalAbsences} F</span>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
             ) : (
-                <div className="space-y-8">
-                    {classes.map(cls => {
+                <div className="animate-fade-in space-y-6">
+                    <div className="flex items-center justify-between">
+                        <button
+                            onClick={() => setSelectedClass(null)}
+                            className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-gray-800 bg-white border border-gray-200 px-4 py-2 rounded-xl shadow-sm transition-all"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                            </svg>
+                            Voltar às Turmas
+                        </button>
+                    </div>
+
+                    {(() => {
+                        const cls = selectedClass;
                         const classRecords = filteredRecords.filter(r => r.studentClass === cls);
                         const totalPresences = classRecords.filter(r => r.status === "P").length;
                         const totalAbsences = classRecords.filter(r => r.status === "F").length;
@@ -182,7 +246,7 @@ export default function DashboardPage() {
                                 </div>
                             </div>
                         );
-                    })}
+                    })()}
                 </div>
             )}
         </div>

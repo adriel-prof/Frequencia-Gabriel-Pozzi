@@ -29,13 +29,25 @@ export default function ImportPage() {
                 complete: (results) => {
                     const parsedData: { id: string | number, name: string, class: string }[] = [];
                     results.data.forEach((row: any) => {
-                        // Mapeia colunas comuns. Ajuste conforme os nomes da sua planilha.
-                        const id = row.id || row.Id || row.ID || row.numero || row.num;
-                        const name = row.nome || row.Nome || row.name || row.Name;
-                        const turma = row.turma || row.Turma || row.class || row.Class || row.classe;
+                        let id: any = null;
+                        let name: any = null;
+                        let turma: any = null;
+
+                        // Varre todas as colunas recebidas limpando caracteres invisíveis (como BOM gerado pelo Excel)
+                        for (const rawKey of Object.keys(row)) {
+                            const cleanKey = rawKey.replace(/[\uFEFF\u200B\u200D]/g, '').trim().toLowerCase();
+
+                            if (cleanKey === 'id' || cleanKey === 'numero' || cleanKey === 'num' || cleanKey === 'nº') {
+                                id = row[rawKey];
+                            } else if (cleanKey === 'nome' || cleanKey === 'name' || cleanKey === 'aluno') {
+                                name = row[rawKey];
+                            } else if (cleanKey === 'turma' || cleanKey === 'class' || cleanKey === 'classe' || cleanKey === 'serie' || cleanKey === 'série') {
+                                turma = row[rawKey];
+                            }
+                        }
 
                         if (id && name && turma) {
-                            parsedData.push({ id: Number(id), name: String(name), class: String(turma) });
+                            parsedData.push({ id: Number(id), name: String(name).trim(), class: String(turma).trim() });
                         }
                     });
 
