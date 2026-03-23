@@ -1,10 +1,12 @@
 "use client";
 
 import { DashboardNav } from "@/components/DashboardNav";
+import { UserMenu } from "@/components/UserMenu";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const { user, role, loading } = useAuth();
@@ -38,8 +40,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         </div>
                         <h1 className="font-extrabold text-xl tracking-tight text-gray-900">Configurações Gestão</h1>
                     </div>
-                    <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-sm">
-                        AD
+                    <div className="flex items-center gap-3">
+                        <Link href="/chamada" className="text-sm font-bold text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 px-3 py-1.5 rounded-full transition-colors hidden sm:block">
+                            ➔ Fazer Chamada
+                        </Link>
+                        <UserMenu />
                     </div>
                 </div>
                 <DashboardNav />

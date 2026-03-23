@@ -7,7 +7,8 @@ export function DashboardNav() {
     const tabs = [
         { name: "Relatórios", href: "/dashboard" },
         { name: "Professores & Adms", href: "/dashboard/users" },
-        { name: "Importar Turmas", href: "/dashboard/import" }
+        { name: "Importar Turmas", href: "/dashboard/import" },
+        { name: "Configurações", href: "/dashboard/settings" }
     ];
 
     return (
@@ -18,8 +19,8 @@ export function DashboardNav() {
                         key={tab.href}
                         href={tab.href}
                         className={`whitespace-nowrap py-3 border-b-2 font-semibold text-sm transition-colors ${pathname === tab.href
-                                ? "border-green-600 text-green-700"
-                                : "border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300"
+                            ? "border-green-600 text-green-700"
+                            : "border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300"
                             }`}
                     >
                         {tab.name}

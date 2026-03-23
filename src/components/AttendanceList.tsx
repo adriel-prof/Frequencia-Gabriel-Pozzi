@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, writeBatch, doc, serverTimestamp } from "firebase/firestore";
+import { collection, writeBatch, doc, getDoc, serverTimestamp, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { useAuth } from "@/context/AuthContext";
 
 type Student = {
+    firestoreId: string;
     id: number;
     name: string;
     class: string;
@@ -14,11 +15,32 @@ type Student = {
 type AttendanceStatus = "P" | "F";
 
 export function AttendanceList({ students }: { students: Student[] }) {
-    const { user } = useAuth();
+    const { user, role } = useAuth();
     const [attendance, setAttendance] = useState<Record<number, AttendanceStatus>>({});
     const [isAllowed, setIsAllowed] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [timeSettings, setTimeSettings] = useState({ start: "08:40", end: "23:59" });
+
+    // Busca os horários dinâmicos do Firebase
+    useEffect(() => {
+        async function fetchSettings() {
+            try {
+                const snap = await getDoc(doc(db, "settings", "attendance"));
+                if (snap.exists()) {
+                    const data = snap.data();
+                    setTimeSettings({
+                        start: data.startTime || "08:40",
+                        end: data.endTime || "23:59"
+                    });
+                }
+            } catch (err) {
+                console.error("Erro ao carregar horários", err);
+            }
+        }
+        fetchSettings();
+    }, []);
 
     // Define padrão das presenças e valida regras de horário
     useEffect(() => {
@@ -28,13 +50,16 @@ export function AttendanceList({ students }: { students: Student[] }) {
         });
         setAttendance(initialAttendance);
 
+    }, [students]);
+
+    useEffect(() => {
         const checkTime = () => {
             const now = new Date();
-            const hours = now.getHours();
-            const minutes = now.getMinutes();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            const currentStr = `${hh}:${mm}`;
 
-            // Libera após 08:40 e talvez travar após um horário limite? (vamos apenas considerar >= 08:40)
-            if (hours > 8 || (hours === 8 && minutes >= 40)) {
+            if (currentStr >= timeSettings.start && currentStr <= timeSettings.end) {
                 setIsAllowed(true);
             } else {
                 setIsAllowed(false);
@@ -44,11 +69,23 @@ export function AttendanceList({ students }: { students: Student[] }) {
         checkTime();
         const interval = setInterval(checkTime, 60000); // Check every minute
         return () => clearInterval(interval);
-    }, [students]);
+    }, [timeSettings]);
 
     const handleStatusChange = (id: number, status: AttendanceStatus) => {
         if (!isAllowed) return; // Ignore input fora do horário
         setAttendance((prev) => ({ ...prev, [id]: status }));
+    };
+
+    const handleDeleteStudent = async (firestoreId: string, studentName: string) => {
+        if (confirm(`Tem certeza que deseja excluir o aluno(a) ${studentName} do banco de dados permanentemente? Essa ação é ideal para remover duplicatas.`)) {
+            try {
+                await deleteDoc(doc(db, "students", firestoreId));
+                window.location.reload(); // Recarrega a página para refletir a exclusão na hora
+            } catch (err) {
+                console.error("Erro ao excluir aluno:", err);
+                alert("Falha ao excluir o aluno. Tente novamente.");
+            }
+        }
     };
 
     const handleSubmit = async () => {
@@ -59,9 +96,13 @@ export function AttendanceList({ students }: { students: Student[] }) {
         try {
             const batch = writeBatch(db);
             const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+            const dateKey = today.replace(/-/g, ""); // YYYYMMDD
 
             students.forEach((s) => {
-                const docRef = doc(collection(db, "attendance")); // Auto-ID doc
+                // Ao criar um ID com base na data + aluno, garantimos a sobrescrita (merge)
+                const docId = `att_${s.firestoreId}_${dateKey}`;
+                const docRef = doc(db, "attendance", docId);
+
                 batch.set(docRef, {
                     studentId: s.id,
                     studentName: s.name,
@@ -74,7 +115,13 @@ export function AttendanceList({ students }: { students: Student[] }) {
             });
 
             await batch.commit();
-            setFeedback({ type: "success", msg: "Chamada finalizada e enviada com sucesso!" });
+
+            // Dispara o e-mail de Busca Ativa em segundo plano (sem travar a tela)
+            const url = user?.email ? `/api/cron/send-report?loggedUserEmail=${encodeURIComponent(user.email)}` : '/api/cron/send-report';
+            fetch(url).catch(console.error);
+
+            setShowSuccessModal(true);
+            setFeedback(null);
         } catch (err: unknown) {
             console.error(err);
             setFeedback({ type: "error", msg: "Erro ao enviar a chamada. Tente novamente." });
@@ -87,7 +134,7 @@ export function AttendanceList({ students }: { students: Student[] }) {
         <div className="max-w-3xl mx-auto pb-24 space-y-4">
             {!isAllowed && (
                 <div className="bg-red-50 text-red-700 p-4 rounded-xl border border-red-200 mb-6 font-medium text-center shadow-sm">
-                    Horário de chamada encerrado ou não iniciado. Acessível a partir das 08:40.
+                    Horário de chamada não permitido. Acessível entre {timeSettings.start} e {timeSettings.end}.
                 </div>
             )}
 
@@ -99,10 +146,23 @@ export function AttendanceList({ students }: { students: Student[] }) {
 
             <div className="space-y-3">
                 {students.map((student) => (
-                    <div key={student.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between gap-4 transition-all">
+                    <div key={student.firestoreId} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between gap-4 transition-all">
                         <div className="flex-1 truncate">
                             <p className="font-semibold text-gray-900 truncate">{student.name}</p>
-                            <p className="text-xs text-gray-400">Nº {student.id} &bull; {student.class}</p>
+                            <p className="text-xs text-gray-400 flex items-center gap-2">
+                                Nº {student.id} &bull; {student.class}
+                                {role === "admin" && (
+                                    <>
+                                        &bull;
+                                        <button
+                                            onClick={() => handleDeleteStudent(student.firestoreId, student.name)}
+                                            className="text-red-500 hover:text-red-700 font-medium cursor-pointer"
+                                        >
+                                            Excluir
+                                        </button>
+                                    </>
+                                )}
+                            </p>
                         </div>
 
                         <div className="flex gap-2">
@@ -110,8 +170,8 @@ export function AttendanceList({ students }: { students: Student[] }) {
                                 disabled={!isAllowed || isSubmitting}
                                 onClick={() => handleStatusChange(student.id, "P")}
                                 className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.id] === "P"
-                                        ? "bg-green-500 text-white shadow-md shadow-green-500/30 scale-105 ring-2 ring-green-600 ring-offset-2"
-                                        : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                    ? "bg-green-500 text-white shadow-md shadow-green-500/30 scale-105 ring-2 ring-green-600 ring-offset-2"
+                                    : "bg-gray-100 text-gray-400 hover:bg-gray-200"
                                     } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
                             >
                                 P
@@ -120,8 +180,8 @@ export function AttendanceList({ students }: { students: Student[] }) {
                                 disabled={!isAllowed || isSubmitting}
                                 onClick={() => handleStatusChange(student.id, "F")}
                                 className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.id] === "F"
-                                        ? "bg-red-500 text-white shadow-md shadow-red-500/30 scale-105 ring-2 ring-red-600 ring-offset-2"
-                                        : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                    ? "bg-red-500 text-white shadow-md shadow-red-500/30 scale-105 ring-2 ring-red-600 ring-offset-2"
+                                    : "bg-gray-100 text-gray-400 hover:bg-gray-200"
                                     } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
                             >
                                 F
@@ -138,8 +198,8 @@ export function AttendanceList({ students }: { students: Student[] }) {
                         onClick={handleSubmit}
                         disabled={!isAllowed || isSubmitting || !!feedback}
                         className={`w-full h-14 rounded-xl font-bold text-lg flex items-center justify-center transition-all ${isAllowed && !feedback
-                                ? "bg-gray-900 text-white hover:bg-gray-800 shadow-lg"
-                                : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                            ? "bg-gray-900 text-white hover:bg-gray-800 shadow-lg"
+                            : "bg-gray-200 text-gray-400 cursor-not-allowed"
                             }`}
                     >
                         {isSubmitting ? (
@@ -151,6 +211,36 @@ export function AttendanceList({ students }: { students: Student[] }) {
                     </button>
                 </div>
             </div>
+
+            {/* Modal de Sucesso (Pop-up) */}
+            {showSuccessModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center space-y-6">
+                        <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto border-4 border-green-50 shadow-inner">
+                            <svg className="w-10 h-10 animate-[bounce_1s_infinite]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 className="text-2xl font-extrabold text-gray-900 tracking-tight">Chamada Finalizada</h3>
+                            <p className="text-gray-500 mt-2 text-sm leading-relaxed">
+                                Os registros foram salvos no banco de dados e o relatório foi enviado com sucesso à coordenação!
+                            </p>
+                        </div>
+                        <div>
+                            <button
+                                onClick={() => {
+                                    setShowSuccessModal(false);
+                                    window.scrollTo(0, 0);
+                                }}
+                                className="w-full bg-green-600 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-green-700 transition-colors shadow-lg shadow-green-600/30"
+                            >
+                                Concluir
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

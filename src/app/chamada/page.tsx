@@ -4,18 +4,21 @@ import { useEffect, useState } from "react";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { AttendanceList } from "@/components/AttendanceList";
+import { UserMenu } from "@/components/UserMenu";
 import Image from "next/image";
+import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 
 type Student = {
+    firestoreId: string;
     id: number;
     name: string;
     class: string;
 };
 
 export default function ChamadaPage() {
-    const { user, loading } = useAuth();
+    const { user, role, loading } = useAuth();
     const router = useRouter();
     const [students, setStudents] = useState<Student[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -33,6 +36,7 @@ export default function ChamadaPage() {
                 const q = query(collection(db, "students"), orderBy("id", "asc"));
                 const snapshot = await getDocs(q);
                 const fetchedStudents = snapshot.docs.map(doc => ({
+                    firestoreId: doc.id,
                     ...doc.data()
                 })) as Student[];
 
@@ -64,8 +68,13 @@ export default function ChamadaPage() {
                         </div>
                         <h1 className="font-bold text-lg text-gray-900">Diário Escolar</h1>
                     </div>
-                    <div className="text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full">
-                        {new Date().toLocaleDateString("pt-BR")}
+                    <div className="flex items-center gap-2">
+                        {role === "admin" && (
+                            <Link href="/dashboard" className="text-sm font-bold text-green-700 bg-green-100 hover:bg-green-200 px-3 py-1.5 rounded-full transition-colors">
+                                Painel Admin
+                            </Link>
+                        )}
+                        <UserMenu />
                     </div>
                 </div>
             </header>
