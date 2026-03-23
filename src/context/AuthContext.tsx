@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { User, signInWithRedirect, signOut, onAuthStateChanged } from "firebase/auth";
+import { User, signInWithPopup, signInWithRedirect, signOut, onAuthStateChanged } from "firebase/auth";
 import { auth, googleProvider, db } from "@/lib/firebaseConfig";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
@@ -91,9 +91,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const signIn = async () => {
         setError(null);
         try {
-            await signInWithRedirect(auth, googleProvider);
+            await signInWithPopup(auth, googleProvider);
         } catch (err: unknown) {
-            setError(err instanceof Error ? err.message : "Erro ao realizar login");
+            // Se o popup for bloqueado, tenta via redirect
+            if (err instanceof Error && err.message.includes('popup')) {
+                try {
+                    await signInWithRedirect(auth, googleProvider);
+                    return;
+                } catch (redirectErr) {
+                    setError("Erro ao realizar login. Tente novamente.");
+                }
+            } else {
+                setError(err instanceof Error ? err.message : "Erro ao realizar login");
+            }
         }
     };
 
