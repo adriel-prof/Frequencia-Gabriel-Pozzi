@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, writeBatch, doc, getDoc, setDoc, serverTimestamp, deleteDoc, addDoc } from "firebase/firestore";
+import { collection, writeBatch, doc, getDoc, setDoc, serverTimestamp, deleteDoc, addDoc, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { useAuth } from "@/context/AuthContext";
 
@@ -23,6 +23,8 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [isUpdateMode, setIsUpdateMode] = useState(false);
+    const [isLoadingAttendance, setIsLoadingAttendance] = useState(true);
 
     // States for Modals
     const [deleteCandidate, setDeleteCandidate] = useState<{ id: string, name: string } | null>(null);
@@ -55,18 +57,54 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
 
     // Define padrão das presenças e valida regras de horário
     useEffect(() => {
-        const initialAttendance: Record<number, AttendanceStatus> = {};
-        const initialDispensed = new Set<number>();
-        students.forEach((s) => {
-            if (s.dispensed) {
-                initialAttendance[s.id] = "D";
-                initialDispensed.add(s.id);
-            } else {
-                initialAttendance[s.id] = "P"; // Padrão
+        async function fetchCurrentStatus() {
+            if (students.length === 0) {
+                setIsLoadingAttendance(false);
+                return;
             }
-        });
-        setAttendance(initialAttendance);
-        setDispensedStudents(initialDispensed);
+            setIsLoadingAttendance(true);
+            try {
+                const today = new Date().toISOString().split("T")[0];
+                const q = query(
+                    collection(db, "attendance"),
+                    where("date", "==", today),
+                    where("studentClass", "==", students[0].class)
+                );
+                const snap = await getDocs(q);
+
+                const initialAttendance: Record<number, AttendanceStatus> = {};
+                const initialDispensed = new Set<number>();
+
+                // 1. Mapear as presenças existentes no banco hoje
+                const existingMap: Record<number, AttendanceStatus> = {};
+                snap.docs.forEach(d => {
+                    const data = d.data();
+                    existingMap[data.studentId] = data.status;
+                });
+
+                // 2. Preencher o estado inicial
+                students.forEach((s) => {
+                    if (s.dispensed) {
+                        initialAttendance[s.id] = "D";
+                        initialDispensed.add(s.id);
+                    } else {
+                        // Se já existir registro de hoje no banco, usa ele. Se não, padrão é "P"
+                        initialAttendance[s.id] = existingMap[s.id] || "P";
+                    }
+                });
+
+                setAttendance(initialAttendance);
+                setDispensedStudents(initialDispensed);
+                if (Object.keys(existingMap).length > 0) {
+                    setIsUpdateMode(true);
+                }
+            } catch (err) {
+                console.error("Erro ao buscar presença do dia", err);
+            } finally {
+                setIsLoadingAttendance(false);
+            }
+        }
+        fetchCurrentStatus();
     }, [students]);
 
     useEffect(() => {
@@ -181,6 +219,17 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     teacher: user?.email,
                     timestamp: serverTimestamp(),
                 });
+            });
+
+            // Registrar Log de Auditoria no Histórico Principal
+            const historyRef = collection(db, "attendance_history");
+            await addDoc(historyRef, {
+                action: isUpdateMode ? "UPDATE" : "CREATE",
+                date: today,
+                studentClass: students[0]?.class,
+                teacher: user?.email,
+                timestamp: serverTimestamp(),
+                snapshot: attendance 
             });
 
             await batch.commit();
@@ -311,7 +360,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
-                        ) : "Finalizar Chamada"}
+                        ) : isUpdateMode ? "Atualizar Chamada" : "Finalizar Chamada"}
                     </button>
                 </div>
             </div>
