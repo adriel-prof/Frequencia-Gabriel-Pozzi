@@ -234,9 +234,14 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
 
             await batch.commit();
 
-            // Dispara o e-mail de Busca Ativa em segundo plano (sem travar a tela)
-            const url = user?.email ? `/api/cron/send-report?loggedUserEmail=${encodeURIComponent(user.email)}` : '/api/cron/send-report';
-            fetch(url).catch(console.error);
+            // Dispara os e-mails em segundo plano (sem travar a tela)
+            const queryParams = user?.email ? `loggedUserEmail=${encodeURIComponent(user.email)}` : '';
+            
+            // 1. Relatório de Faltas (Busca Ativa)
+            fetch(`/api/cron/send-report?${queryParams}`).catch(console.error);
+
+            // 2. Relatório de Porcentagem de Frequência (Indicadores)
+            fetch(`/api/cron/send-percentage-report?${queryParams}`).catch(console.error);
 
             setShowSuccessModal(true);
             setFeedback(null);
