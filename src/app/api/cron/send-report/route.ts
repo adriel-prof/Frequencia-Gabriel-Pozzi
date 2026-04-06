@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebaseConfig';
 import nodemailer from 'nodemailer';
 

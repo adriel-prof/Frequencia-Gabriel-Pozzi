@@ -24,7 +24,6 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [isUpdateMode, setIsUpdateMode] = useState(false);
-    const [isLoadingAttendance, setIsLoadingAttendance] = useState(true);
 
     // States for Modals
     const [deleteCandidate, setDeleteCandidate] = useState<{ id: string, name: string } | null>(null);
@@ -59,10 +58,8 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     useEffect(() => {
         async function fetchCurrentStatus() {
             if (students.length === 0) {
-                setIsLoadingAttendance(false);
                 return;
             }
-            setIsLoadingAttendance(true);
             try {
                 const today = new Date().toISOString().split("T")[0];
                 const q = query(
@@ -101,7 +98,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             } catch (err) {
                 console.error("Erro ao buscar presença do dia", err);
             } finally {
-                setIsLoadingAttendance(false);
+                // Done
             }
         }
         fetchCurrentStatus();
