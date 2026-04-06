@@ -10,25 +10,33 @@ export async function GET(request: Request) {
     try {
         const today = new Date().toISOString().split("T")[0];
 
-        // Buscar apenas FALTAS (status = "F") do dia atual
+        // Buscar TODAS as chamadas do dia para computar concluídas vs pendentes
         const attendanceRef = collection(db, "attendance");
-        const q = query(attendanceRef, where("date", "==", today), where("status", "==", "F"));
+        const q = query(attendanceRef, where("date", "==", today));
         const snapshot = await getDocs(q);
 
-        if (snapshot.empty) {
-            return NextResponse.json({ message: 'Nenhuma falta registrada hoje.' });
-        }
-
-        // Agrupar faltosos por turma
+        // Agrupar faltosos por turma e registrar turmas concluídas
         type AbsenceData = { studentClass: string; studentId: number; studentName: string; status: string; };
         const absencesByClass: Record<string, AbsenceData[]> = {};
+        const completedClassesSet = new Set<string>();
+
         snapshot.docs.forEach(doc => {
             const data = doc.data() as AbsenceData;
-            if (!absencesByClass[data.studentClass]) {
-                absencesByClass[data.studentClass] = [];
+            completedClassesSet.add(data.studentClass);
+
+            if (data.status === "F") {
+                if (!absencesByClass[data.studentClass]) {
+                    absencesByClass[data.studentClass] = [];
+                }
+                absencesByClass[data.studentClass].push(data);
             }
-            absencesByClass[data.studentClass].push(data);
         });
+
+        // Buscar todas as turmas cadastradas nos alunos
+        const studentsSnap = await getDocs(collection(db, "students"));
+        const allClasses = Array.from(new Set(studentsSnap.docs.map(d => d.data().class as string))).sort();
+        
+        const missingClasses = allClasses.filter(cls => !completedClassesSet.has(cls));
 
         // Buscar admins para enviar e-mail
         const adminEmails: string[] = [];
@@ -86,6 +94,40 @@ export async function GET(request: Request) {
                 </div>
                 
                 <div style="padding: 32px 24px;">
+        `;
+
+        if (missingClasses.length > 0) {
+            htmlContent += `
+                    <div style="margin-bottom: 24px; padding: 16px; background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;">
+                        <h3 style="margin-top: 0; color: #991b1b; font-size: 16px;">
+                            ⏳ Chamadas Pendentes
+                        </h3>
+                        <p style="margin: 0 0 12px 0; font-size: 14px; color: #7f1d1d;">
+                            Atenção: Os seguintes professores/turmas ainda <strong>não lançaram</strong> a frequência hoje:
+                        </p>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            `;
+            missingClasses.forEach(cls => {
+                htmlContent += `<span style="background-color: #fee2e2; color: #991b1b; padding: 4px 8px; border-radius: 4px; font-size: 13px; font-weight: bold; border: 1px solid #f87171; display: inline-block;">Turma ${cls}</span> `;
+            });
+            htmlContent += `
+                        </div>
+                    </div>
+            `;
+        } else {
+             htmlContent += `
+                    <div style="margin-bottom: 24px; padding: 16px; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;">
+                        <h3 style="margin-top: 0; color: #166534; font-size: 16px;">
+                            ✅ Todas as chamadas concluídas!
+                        </h3>
+                        <p style="margin: 0; font-size: 14px; color: #15803d;">
+                            Todos os diários previstos para hoje foram preenchidos com sucesso.
+                        </p>
+                    </div>
+            `;
+        }
+
+        htmlContent += `
                     <p style="margin-top: 0; font-size: 16px; line-height: 1.5;">
                         Olá Direção / Coordenação,<br/><br/>
                         Abaixo estão listados os alunos que <strong>ausentaram-se</strong> hoje na E.E. Prof. Gabriel Pozzi e requerem acompanhamento da "Busca Ativa":
@@ -94,21 +136,25 @@ export async function GET(request: Request) {
 
         const sortedClasses = Object.keys(absencesByClass).sort();
 
-        for (const studentClass of sortedClasses) {
-            const students = absencesByClass[studentClass];
-            htmlContent += `
-                    <div style="margin-top: 24px; padding: 16px; background-color: #f9fafb; border-left: 4px solid #b91c1c; border-radius: 4px;">
-                        <h3 style="color: #b91c1c; margin-top: 0; margin-bottom: 12px; font-size: 18px;">
-                            Turma ${studentClass} <span style="font-size: 14px; font-weight: normal; color: #4b5563;">(${students.length} faltas)</span>
-                        </h3>
-                        <ul style="margin: 0; padding-left: 20px; color: #374151; font-size: 14px; line-height: 1.6;">
-            `;
+        if (sortedClasses.length === 0) {
+            htmlContent += `<p style="color: #059669; font-weight: bold; padding: 16px; background: #ecfdf5; border-radius: 8px; border: 1px solid #a7f3d0;">Nenhuma falta foi registrada nas chamadas feitas até o momento.</p>`;
+        } else {
+            for (const studentClass of sortedClasses) {
+                const students = absencesByClass[studentClass];
+                htmlContent += `
+                        <div style="margin-top: 24px; padding: 16px; background-color: #f9fafb; border-left: 4px solid #b91c1c; border-radius: 4px;">
+                            <h3 style="color: #b91c1c; margin-top: 0; margin-bottom: 12px; font-size: 18px;">
+                                Turma ${studentClass} <span style="font-size: 14px; font-weight: normal; color: #4b5563;">(${students.length} faltas)</span>
+                            </h3>
+                            <ul style="margin: 0; padding-left: 20px; color: #374151; font-size: 14px; line-height: 1.6;">
+                `;
 
-            // Ordenar por nome
-            students.sort((a, b) => a.studentName.localeCompare(b.studentName)).forEach(student => {
-                htmlContent += `<li>${student.studentName}</li>`;
-            });
-            htmlContent += `</ul></div>`;
+                // Ordenar por nome
+                students.sort((a, b) => a.studentName.localeCompare(b.studentName)).forEach(student => {
+                    htmlContent += `<li>${student.studentName}</li>`;
+                });
+                htmlContent += `</ul></div>`;
+            }
         }
 
         htmlContent += `

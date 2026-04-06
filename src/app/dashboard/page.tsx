@@ -23,6 +23,7 @@ export default function DashboardPage() {
     const [targetEmail, setTargetEmail] = useState("");
     const [isSendingReport, setIsSendingReport] = useState(false);
     const [selectedClass, setSelectedClass] = useState<string | null>(null);
+    const [allClasses, setAllClasses] = useState<string[]>([]);
 
     useEffect(() => {
         async function fetchRecords() {
@@ -35,6 +36,11 @@ export default function DashboardPage() {
                 })) as AttendanceRecord[];
 
                 setRecords(data);
+
+                // Find all existing classes
+                const studentsSnap = await getDocs(collection(db, "students"));
+                const uniqueClasses = Array.from(new Set(studentsSnap.docs.map(d => d.data().class as string))).sort();
+                setAllClasses(uniqueClasses);
             } catch (err) {
                 console.error("Erro ao buscar registros:", err);
             } finally {
@@ -54,6 +60,7 @@ export default function DashboardPage() {
 
     const filteredRecords = records.filter(r => r.date === filterDate);
     const classes = Array.from(new Set(filteredRecords.map(r => r.studentClass)));
+    const missingClasses = allClasses.filter(cls => !classes.includes(cls));
 
     const handleDeleteClassReport = async (cls: string, classRecords: AttendanceRecord[]) => {
         if (!confirm(`Tem certeza que deseja excluir DEFNITIVAMENTE o relatório da Turma ${cls} na data selecionada?`)) return;
@@ -140,17 +147,56 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            {classes.length === 0 ? (
-                <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
-                    <p className="text-gray-500 font-medium">Nenhuma chamada registrada para esta data.</p>
-                </div>
-            ) : !selectedClass ? (
+            {!selectedClass ? (
                 <div className="space-y-6 animate-fade-in">
-                    <div className="text-center mb-8 bg-white py-10 rounded-2xl border border-gray-100 shadow-sm">
-                        <h2 className="text-2xl font-extrabold text-gray-900">Relatórios de Chamada</h2>
-                        <p className="text-gray-500 mt-2">Escolha uma turma para detalhar as presenças e faltas do dia.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                        <div className="bg-white p-6 rounded-2xl border-l-4 border-green-500 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-bold text-gray-500 uppercase tracking-widest">Chamadas Concluídas</p>
+                                <h3 className="text-3xl font-black text-gray-900 mt-1">{classes.length} Turmas</h3>
+                            </div>
+                            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-green-600">
+                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div className="bg-white p-6 rounded-2xl border-l-4 border-red-500 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-bold text-gray-500 uppercase tracking-widest">Chamadas Pendentes</p>
+                                <h3 className="text-3xl font-black text-gray-900 mt-1">{missingClasses.length} Turmas</h3>
+                            </div>
+                            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-600">
+                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                        </div>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+
+                    {missingClasses.length > 0 && (
+                        <div className="mb-8">
+                            <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                                Aguardando Professor (Pendentes)
+                            </h3>
+                            <div className="flex flex-wrap gap-2">
+                                {missingClasses.map(cls => (
+                                    <span key={cls} className="px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm font-bold shadow-sm">
+                                        Turma {cls}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {classes.length > 0 ? (
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                                Detalhar Chamadas Concluídas
+                            </h3>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                         {classes.sort().map(cls => {
                             const classRecords = filteredRecords.filter(r => r.studentClass === cls);
                             const totalPresences = classRecords.filter(r => r.status === "P").length;
@@ -180,7 +226,13 @@ export default function DashboardPage() {
                                 </button>
                             );
                         })}
-                    </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
+                            <p className="text-gray-500 font-medium">Nenhuma chamada registrada para esta data ainda.</p>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div className="animate-fade-in space-y-6">
