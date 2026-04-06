@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { collection, getDocs, query, orderBy, where, doc, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { AttendanceList } from "@/components/AttendanceList";
+import { TeacherHistory } from "@/components/TeacherHistory";
 import { UserMenu } from "@/components/UserMenu";
 import Image from "next/image";
 import Link from "next/link";
@@ -23,6 +24,7 @@ export default function ChamadaPage() {
     const [students, setStudents] = useState<Student[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedClass, setSelectedClass] = useState<string | null>(null);
+    const [viewMode, setViewMode] = useState<"chamada" | "historico">("chamada");
 
     useEffect(() => {
         if (!loading && !user) {
@@ -102,10 +104,28 @@ export default function ChamadaPage() {
                         <UserMenu />
                     </div>
                 </div>
+                {!selectedClass && (
+                    <div className="max-w-3xl mx-auto px-4 pb-3 flex gap-2">
+                        <button 
+                            onClick={() => setViewMode("chamada")}
+                            className={`px-4 py-1.5 rounded-lg font-bold text-sm transition-colors ${viewMode === "chamada" ? "bg-green-100 text-green-700" : "bg-white text-gray-500 border border-gray-100 hover:bg-gray-50"}`}
+                        >
+                            Nova Chamada
+                        </button>
+                        <button 
+                            onClick={() => setViewMode("historico")}
+                            className={`px-4 py-1.5 rounded-lg font-bold text-sm transition-colors ${viewMode === "historico" ? "bg-green-100 text-green-700" : "bg-white text-gray-500 border border-gray-100 hover:bg-gray-50"}`}
+                        >
+                            Histórico
+                        </button>
+                    </div>
+                )}
             </header>
 
             <main className="p-4 pt-6 max-w-3xl mx-auto">
-                {students.length === 0 ? (
+                {viewMode === "historico" ? (
+                    <TeacherHistory />
+                ) : students.length === 0 ? (
                     <div className="text-center py-10 bg-white rounded-2xl border border-gray-100 shadow-sm">
                         <p className="text-gray-500 font-medium p-8">Nenhum aluno encontrado no banco de dados.</p>
                     </div>
