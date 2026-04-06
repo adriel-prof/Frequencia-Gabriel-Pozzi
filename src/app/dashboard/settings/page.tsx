@@ -7,7 +7,6 @@ import { db } from "@/lib/firebaseConfig";
 export default function SettingsPage() {
     const [startTime, setStartTime] = useState("08:40");
     const [endTime, setEndTime] = useState("23:59");
-    const [reportEmails, setReportEmails] = useState("adrielbsilva@gmail.com");
     const [isSaving, setIsSaving] = useState(false);
     const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
@@ -20,7 +19,6 @@ export default function SettingsPage() {
                     const data = snap.data();
                     if (data.startTime) setStartTime(data.startTime);
                     if (data.endTime) setEndTime(data.endTime);
-                    if (data.reportEmails) setReportEmails(data.reportEmails);
                 }
             } catch (err) {
                 console.error("Erro ao carregar configurações:", err);
@@ -37,7 +35,6 @@ export default function SettingsPage() {
             await setDoc(doc(db, "settings", "attendance"), {
                 startTime,
                 endTime,
-                reportEmails
             }, { merge: true });
             setFeedback({ type: "success", msg: "Configurações salvas com sucesso!" });
         } catch (error) {
@@ -86,18 +83,7 @@ export default function SettingsPage() {
                         </div>
                     </div>
 
-                    <div className="space-y-2 mt-6">
-                        <label className="block text-sm font-semibold text-gray-700">E-mails que Recebem os Relatórios Diários</label>
-                        <p className="text-xs text-gray-500 mb-2">Separe múltiplos e-mails por vírgula. Ex: diretor@escola.br, coordenador@escola.br</p>
-                        <textarea
-                            required
-                            rows={3}
-                            value={reportEmails}
-                            onChange={e => setReportEmails(e.target.value)}
-                            placeholder="dir@escola.com, prof@escola.com"
-                            className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-green-500 text-gray-900 resize-none"
-                        />
-                    </div>
+
 
                     <button
                         type="submit"

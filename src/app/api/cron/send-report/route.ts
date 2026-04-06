@@ -49,16 +49,9 @@ export async function GET(request: Request) {
             // Se o usuário especificou um e-mail lá no Dashboard, manda SÓ PRA ELE (mas também inclui o logado depois)
             adminEmails.push(targetEmail);
         } else {
-            // Comportamento normal automático: Busca os e-mails configurados no Firestore + Admins Base
+            // Comportamento normal automático: Busca os e-mails dos Admins Base
 
-            // 1. Busca da aba de configurações (Settings)
-            const settingsDoc = await getDoc(doc(db, "settings", "attendance"));
-            if (settingsDoc.exists() && settingsDoc.data().reportEmails) {
-                const configEmails = settingsDoc.data().reportEmails.split(',').map((e: string) => e.trim()).filter(Boolean);
-                adminEmails.push(...configEmails);
-            }
-
-            // 2. Busca dos Professores promovidos a 'Admin'
+            // 1. Busca dos Professores promovidos a 'Admin'
             const rolesRef = collection(db, "roles");
             const rolesQuery = query(rolesRef, where("role", "==", "admin"));
             const rolesSnapshot = await getDocs(rolesQuery);
@@ -68,7 +61,7 @@ export async function GET(request: Request) {
                 if (!adminEmails.includes(email)) adminEmails.push(email);
             });
 
-            // 3. Garante que o Admin raiz não fique de fora
+            // 2. Garante que o Admin raiz não fique de fora
             const rootAdmin = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
             if (rootAdmin && !adminEmails.includes(rootAdmin)) {
                 adminEmails.push(rootAdmin);
