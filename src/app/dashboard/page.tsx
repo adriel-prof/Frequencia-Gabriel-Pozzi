@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { doc, getDocs, query, orderBy, writeBatch, collection } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
-import { useAuth } from "@/context/AuthContext";
+
 
 type AttendanceRecord = {
     id: string;
@@ -15,13 +15,15 @@ type AttendanceRecord = {
     teacher: string;
 };
 
+const LOCK_DATE = "2026-04-06";
+
+
 export default function DashboardPage() {
-    const { user } = useAuth();
+
     const [records, setRecords] = useState<AttendanceRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filterDate, setFilterDate] = useState(new Date().toISOString().split("T")[0]);
-    const [targetEmail, setTargetEmail] = useState("");
-    const [isSendingReport, setIsSendingReport] = useState(false);
+
     const [selectedClass, setSelectedClass] = useState<string | null>(null);
     const [allClasses, setAllClasses] = useState<string[]>([]);
 
@@ -30,10 +32,12 @@ export default function DashboardPage() {
             try {
                 const q = query(collection(db, "attendance"), orderBy("studentName", "asc"));
                 const snapshot = await getDocs(q);
-                const data = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                })) as AttendanceRecord[];
+                const data = snapshot.docs
+                    .map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }))
+                    .filter(record => (record as AttendanceRecord).date >= LOCK_DATE) as AttendanceRecord[];
 
                 setRecords(data);
 
@@ -81,28 +85,7 @@ export default function DashboardPage() {
         }
     };
 
-    const handleSendManualReport = async () => {
-        setIsSendingReport(true);
-        try {
-            const params = new URLSearchParams();
-            if (targetEmail) params.append('email', targetEmail);
-            if (user?.email) params.append('loggedUserEmail', user.email);
 
-            const url = `/api/cron/send-report${params.toString() ? `?${params.toString()}` : ''}`;
-            const res = await fetch(url);
-            if (res.ok) {
-                alert("Relatório enviado com sucesso!");
-                setTargetEmail("");
-            } else {
-                alert("Erro ao enviar o relatório. Detalhes no console.");
-            }
-        } catch (err) {
-            console.error(err);
-            alert("Erro de comunicação ao enviar o relatório.");
-        } finally {
-            setIsSendingReport(false);
-        }
-    };
 
     return (
         <div className="space-y-6 animate-fade-in">
@@ -112,6 +95,7 @@ export default function DashboardPage() {
                     <input
                         type="date"
                         value={filterDate}
+                        min={LOCK_DATE}
                         onChange={(e) => setFilterDate(e.target.value)}
                         className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-green-500 focus:outline-none"
                     />
@@ -128,22 +112,7 @@ export default function DashboardPage() {
                         Imprimir Placar
                     </button>
 
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <input
-                            type="email"
-                            placeholder="Destinatário (Opcional)"
-                            value={targetEmail}
-                            onChange={e => setTargetEmail(e.target.value)}
-                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 min-w-[200px] w-full"
-                        />
-                        <button
-                            onClick={handleSendManualReport}
-                            disabled={isSendingReport}
-                            className="bg-gray-900 text-white font-medium text-sm px-4 py-2 rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors whitespace-nowrap shadow-sm"
-                        >
-                            {isSendingReport ? "Enviando..." : "E-mail Busca Ativa"}
-                        </button>
-                    </div>
+
                 </div>
             </div>
 

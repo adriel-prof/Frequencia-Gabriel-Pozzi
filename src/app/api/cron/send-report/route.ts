@@ -9,28 +9,60 @@ export async function GET(request: Request) {
     // A rota agora pode ser disparada tanto por um Cron Job quanto pelo clique do Professor
     try {
         const today = new Date().toISOString().split("T")[0];
+        const LOCK_DATE = "2026-04-06";
 
-        // Buscar TODAS as chamadas do dia para computar concluídas vs pendentes
+        // Buscar Chamadas a partir da data de corte para calcular porcentagens
         const attendanceRef = collection(db, "attendance");
-        const q = query(attendanceRef, where("date", "==", today));
+        const q = query(attendanceRef, where("date", ">=", LOCK_DATE));
         const snapshot = await getDocs(q);
 
         // Agrupar faltosos por turma e registrar turmas concluídas
-        type AbsenceData = { studentClass: string; studentId: number; studentName: string; status: string; };
-        const absencesByClass: Record<string, AbsenceData[]> = {};
+        type AttendanceDoc = { studentClass: string; studentId: number; studentName: string; status: string; date: string; };
+        
+        // Dados para o relatório de HOJE
+        const absencesByClass: Record<string, { studentName: string; studentId: number; absenceRate: number }[]> = {};
         const completedClassesSet = new Set<string>();
+        
+        // Dados para calcular a porcentagem geral de cada aluno (reincidência)
+        const studentStats: Record<number, { total: number; absences: number; name: string; class: string }> = {};
 
         snapshot.docs.forEach(doc => {
-            const data = doc.data() as AbsenceData;
-            completedClassesSet.add(data.studentClass);
-
+            const data = doc.data() as AttendanceDoc;
+            
+            // Registrar estatística geral do aluno
+            if (!studentStats[data.studentId]) {
+                studentStats[data.studentId] = { total: 0, absences: 0, name: data.studentName, class: data.studentClass };
+            }
+            studentStats[data.studentId].total += 1;
             if (data.status === "F") {
+                studentStats[data.studentId].absences += 1;
+            }
+
+            // Ações específicas para registros de HOJE
+            if (data.date === today) {
+                completedClassesSet.add(data.studentClass);
+            }
+        });
+
+        // Agora que temos todas as estatísticas, filtramos quem faltou HOJE para montar o relatório
+        snapshot.docs.forEach(doc => {
+            const data = doc.data() as AttendanceDoc;
+            if (data.date === today && data.status === "F") {
                 if (!absencesByClass[data.studentClass]) {
                     absencesByClass[data.studentClass] = [];
                 }
-                absencesByClass[data.studentClass].push(data);
+                
+                const stats = studentStats[data.studentId];
+                const absenceRate = Math.round((stats.absences / stats.total) * 100);
+                
+                absencesByClass[data.studentClass].push({
+                    studentName: data.studentName,
+                    studentId: data.studentId,
+                    absenceRate: absenceRate
+                });
             }
         });
+
 
         // Buscar todas as turmas cadastradas nos alunos
         const studentsSnap = await getDocs(collection(db, "students"));
@@ -144,8 +176,17 @@ export async function GET(request: Request) {
 
                 // Ordenar por nome
                 students.sort((a, b) => a.studentName.localeCompare(b.studentName)).forEach(student => {
-                    htmlContent += `<li>${student.studentName}</li>`;
+                    const isHighAbsence = student.absenceRate >= 15;
+                    htmlContent += `
+                        <li style="margin-bottom: 4px;">
+                            ${student.studentName} 
+                            <span style="font-weight: bold; color: ${isHighAbsence ? '#b91c1c' : '#6b7280'};">
+                                (${student.absenceRate}% de faltas)
+                            </span>
+                        </li>
+                    `;
                 });
+
                 htmlContent += `</ul></div>`;
             }
         }

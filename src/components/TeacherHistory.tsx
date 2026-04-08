@@ -14,6 +14,9 @@ type AttendanceRecord = {
     teacher: string;
 };
 
+const LOCK_DATE = "2026-04-06";
+
+
 export function TeacherHistory() {
     const [records, setRecords] = useState<AttendanceRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -25,10 +28,12 @@ export function TeacherHistory() {
             try {
                 const q = query(collection(db, "attendance"), orderBy("studentName", "asc"));
                 const snapshot = await getDocs(q);
-                const data = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                })) as AttendanceRecord[];
+                const data = snapshot.docs
+                    .map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }))
+                    .filter(record => (record as AttendanceRecord).date >= LOCK_DATE) as AttendanceRecord[];
 
                 setRecords(data);
             } catch (err) {
@@ -59,6 +64,7 @@ export function TeacherHistory() {
                     <input
                         type="date"
                         value={filterDate}
+                        min={LOCK_DATE}
                         onChange={(e) => {
                             setFilterDate(e.target.value);
                             setSelectedClass(null);

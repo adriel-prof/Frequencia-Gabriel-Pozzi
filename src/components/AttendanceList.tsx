@@ -15,6 +15,9 @@ type Student = {
 
 type AttendanceStatus = "P" | "F" | "D";
 
+const LOCK_DATE = "2026-04-06";
+
+
 export function AttendanceList({ students, onSuccess }: { students: Student[], onSuccess?: () => void }) {
     const { user, role } = useAuth();
     const [attendance, setAttendance] = useState<Record<number, AttendanceStatus>>({});
@@ -105,21 +108,21 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     }, [students]);
 
     useEffect(() => {
-        const checkTime = () => {
+        const checkTimeAndDate = () => {
             const now = new Date();
+            const today = now.toISOString().split("T")[0];
             const hh = String(now.getHours()).padStart(2, '0');
             const mm = String(now.getMinutes()).padStart(2, '0');
             const currentStr = `${hh}:${mm}`;
 
-            if (currentStr >= timeSettings.start && currentStr <= timeSettings.end) {
-                setIsAllowed(true);
-            } else {
-                setIsAllowed(false);
-            }
+            const isTimeAllowed = currentStr >= timeSettings.start && currentStr <= timeSettings.end;
+            const isDateAllowed = today >= LOCK_DATE;
+
+            setIsAllowed(isTimeAllowed && isDateAllowed);
         };
 
-        checkTime();
-        const interval = setInterval(checkTime, 60000); // Check every minute
+        checkTimeAndDate();
+        const interval = setInterval(checkTimeAndDate, 60000); // Check every minute
         return () => clearInterval(interval);
     }, [timeSettings]);
 
@@ -252,11 +255,25 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
 
     return (
         <div className="max-w-3xl mx-auto pb-24 space-y-4">
-            {!isAllowed && (
-                <div className="bg-red-50 text-red-700 p-4 rounded-xl border border-red-200 mb-6 font-medium text-center shadow-sm">
-                    Horário de chamada não permitido. Acessível entre {timeSettings.start} e {timeSettings.end}.
-                </div>
-            )}
+            {(() => {
+                const now = new Date();
+                const today = now.toISOString().split("T")[0];
+                if (today < LOCK_DATE) {
+                    return (
+                        <div className="bg-amber-50 text-amber-700 p-4 rounded-xl border border-amber-200 mb-6 font-medium text-center shadow-sm">
+                            Registros bloqueados para datas anteriores a 06/04/2026.
+                        </div>
+                    );
+                }
+                if (!isAllowed) {
+                    return (
+                        <div className="bg-red-50 text-red-700 p-4 rounded-xl border border-red-200 mb-6 font-medium text-center shadow-sm">
+                            Horário de chamada não permitido. Acessível entre {timeSettings.start} e {timeSettings.end}.
+                        </div>
+                    );
+                }
+                return null;
+            })()}
 
             {feedback && (
                 <div className={`p-4 rounded-xl border font-medium mb-6 ${feedback.type === "success" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
