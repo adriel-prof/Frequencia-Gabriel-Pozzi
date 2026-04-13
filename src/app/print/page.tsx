@@ -25,16 +25,18 @@ function PrintContent() {
                 const q = query(collection(db, "attendance"), where("date", "==", date));
                 const snapshot = await getDocs(q);
 
+                const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
                 const stats: Record<string, { p: number; f: number }> = {};
                 snapshot.docs.forEach(doc => {
                     const data = doc.data() as AttendanceRecord;
-                    if (!stats[data.studentClass]) {
-                        stats[data.studentClass] = { p: 0, f: 0 };
+                    const clsNorm = normalizeClassName(data.studentClass);
+                    if (!stats[clsNorm]) {
+                        stats[clsNorm] = { p: 0, f: 0 };
                     }
                     if (data.status === "P") {
-                        stats[data.studentClass].p += 1;
+                        stats[clsNorm].p += 1;
                     } else if (data.status === "F") {
-                        stats[data.studentClass].f += 1;
+                        stats[clsNorm].f += 1;
                     }
                 });
 

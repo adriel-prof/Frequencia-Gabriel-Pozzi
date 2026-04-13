@@ -26,12 +26,14 @@ export async function GET(request: Request) {
         const presencesPerClass: Record<string, number> = {};
         const completedClasses = new Set<string>();
 
+        const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
         attendanceSnap.docs.forEach(doc => {
             const data = doc.data();
-            completedClasses.add(data.studentClass);
+            const clsNorm = normalizeClassName(data.studentClass);
+            completedClasses.add(clsNorm);
             // Consideramos P (Presença) e D (Dispensa Médica) como "Frequentes" para o cálculo
             if (data.status === "P" || data.status === "D") {
-                presencesPerClass[data.studentClass] = (presencesPerClass[data.studentClass] || 0) + 1;
+                presencesPerClass[clsNorm] = (presencesPerClass[clsNorm] || 0) + 1;
             }
         });
 

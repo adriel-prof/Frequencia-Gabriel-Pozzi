@@ -62,9 +62,10 @@ export default function DashboardPage() {
         );
     }
 
+    const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
     const filteredRecords = records.filter(r => r.date === filterDate);
-    const classes = Array.from(new Set(filteredRecords.map(r => r.studentClass)));
-    const missingClasses = allClasses.filter(cls => !classes.includes(cls));
+    const classes = Array.from(new Set(filteredRecords.map(r => normalizeClassName(r.studentClass))));
+    const missingClasses = allClasses.filter(cls => !classes.includes(normalizeClassName(cls)));
 
     const handleDeleteClassReport = async (cls: string, classRecords: AttendanceRecord[]) => {
         if (!confirm(`Tem certeza que deseja excluir DEFNITIVAMENTE o relatório da Turma ${cls} na data selecionada?`)) return;
@@ -166,8 +167,8 @@ export default function DashboardPage() {
                                 Detalhar Chamadas Concluídas
                             </h3>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                        {classes.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map(cls => {
-                            const classRecords = filteredRecords.filter(r => r.studentClass === cls);
+                        {classes.sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true, sensitivity: 'base' })).map(cls => {
+                            const classRecords = filteredRecords.filter(r => normalizeClassName(r.studentClass) === cls);
                             const totalPresences = classRecords.filter(r => r.status === "P").length;
                             const totalAbsences = classRecords.filter(r => r.status === "F").length;
                             const percentage = totalPresences + totalAbsences > 0

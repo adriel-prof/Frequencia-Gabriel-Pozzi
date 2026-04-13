@@ -136,7 +136,7 @@ export default function ChamadaPage() {
                             <p className="text-gray-500 mt-2">Escolha a turma que deseja realizar a chamada agora.</p>
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                            {Array.from(new Set(students.map(s => s.class))).sort().map(cls => (
+                            {Array.from(new Set(students.map(s => s.class.trim().toUpperCase().replace(/°/g, 'º')))).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true, sensitivity: 'base' })).map(cls => (
                                 <div key={cls} className="relative group/card">
                                     <button
                                         onClick={() => setSelectedClass(cls)}
@@ -146,7 +146,7 @@ export default function ChamadaPage() {
                                             {cls}
                                         </span>
                                         <span className="text-xs text-gray-400 mt-2 font-medium">
-                                            {students.filter(s => s.class === cls).length} alunos
+                                            {students.filter(s => s.class.trim().toUpperCase().replace(/°/g, 'º') === cls).length} alunos
                                         </span>
                                     </button>
 
@@ -182,7 +182,7 @@ export default function ChamadaPage() {
                             </h2>
                         </div>
                         <AttendanceList
-                            students={students.filter(s => s.class === selectedClass)}
+                            students={students.filter(s => s.class.trim().toUpperCase().replace(/°/g, 'º') === selectedClass)}
                             onSuccess={() => setSelectedClass(null)}
                         />
                     </div>

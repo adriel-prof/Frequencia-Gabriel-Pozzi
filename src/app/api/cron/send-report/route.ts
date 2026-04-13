@@ -26,12 +26,14 @@ export async function GET(request: Request) {
         // Dados para calcular a porcentagem geral de cada aluno (reincidência)
         const studentStats: Record<number, { total: number; absences: number; name: string; class: string }> = {};
 
+        const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
         snapshot.docs.forEach(doc => {
             const data = doc.data() as AttendanceDoc;
+            const clsNorm = normalizeClassName(data.studentClass);
             
             // Registrar estatística geral do aluno
             if (!studentStats[data.studentId]) {
-                studentStats[data.studentId] = { total: 0, absences: 0, name: data.studentName, class: data.studentClass };
+                studentStats[data.studentId] = { total: 0, absences: 0, name: data.studentName, class: clsNorm };
             }
             studentStats[data.studentId].total += 1;
             if (data.status === "F") {
@@ -40,22 +42,23 @@ export async function GET(request: Request) {
 
             // Ações específicas para registros de HOJE
             if (data.date === today) {
-                completedClassesSet.add(data.studentClass);
+                completedClassesSet.add(clsNorm);
             }
         });
 
         // Agora que temos todas as estatísticas, filtramos quem faltou HOJE para montar o relatório
         snapshot.docs.forEach(doc => {
             const data = doc.data() as AttendanceDoc;
+            const clsNorm = normalizeClassName(data.studentClass);
             if (data.date === today && data.status === "F") {
-                if (!absencesByClass[data.studentClass]) {
-                    absencesByClass[data.studentClass] = [];
+                if (!absencesByClass[clsNorm]) {
+                    absencesByClass[clsNorm] = [];
                 }
                 
                 const stats = studentStats[data.studentId];
                 const absenceRate = Math.round((stats.absences / stats.total) * 100);
                 
-                absencesByClass[data.studentClass].push({
+                absencesByClass[clsNorm].push({
                     studentName: data.studentName,
                     studentId: data.studentId,
                     absenceRate: absenceRate
