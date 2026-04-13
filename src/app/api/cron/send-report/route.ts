@@ -159,7 +159,7 @@ export async function GET(request: Request) {
                     </p>
         `;
 
-        const sortedClasses = Object.keys(absencesByClass).sort();
+        const sortedClasses = Object.keys(absencesByClass).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
         if (sortedClasses.length === 0) {
             htmlContent += `<p style="color: #059669; font-weight: bold; padding: 16px; background: #ecfdf5; border-radius: 8px; border: 1px solid #a7f3d0;">Nenhuma falta foi registrada nas chamadas feitas até o momento.</p>`;

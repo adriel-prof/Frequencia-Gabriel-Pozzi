@@ -62,7 +62,7 @@ export async function GET(request: Request) {
         }
 
         // 4. Montar o Relatório
-        const sortedClasses = Object.keys(studentsPerClass).sort();
+        const sortedClasses = Object.keys(studentsPerClass).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
         const dateBR = new Date().toLocaleDateString("pt-BR");
 
         let tableRows = "";

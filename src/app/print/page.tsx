@@ -45,7 +45,7 @@ function PrintContent() {
                 });
 
                 // Sort classes
-                result.sort((a, b) => a.className.localeCompare(b.className));
+                result.sort((a, b) => a.className.localeCompare(b.className, undefined, { numeric: true, sensitivity: 'base' }));
                 setClassData(result);
             } catch (err) {
                 console.error("Erro ao buscar dados para impressão:", err);

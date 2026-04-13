@@ -166,7 +166,7 @@ export default function DashboardPage() {
                                 Detalhar Chamadas Concluídas
                             </h3>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                        {classes.sort().map(cls => {
+                        {classes.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map(cls => {
                             const classRecords = filteredRecords.filter(r => r.studentClass === cls);
                             const totalPresences = classRecords.filter(r => r.status === "P").length;
                             const totalAbsences = classRecords.filter(r => r.status === "F").length;
