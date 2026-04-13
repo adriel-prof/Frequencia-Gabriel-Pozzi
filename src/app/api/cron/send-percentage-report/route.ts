@@ -13,8 +13,9 @@ export async function GET(request: Request) {
         const studentsSnap = await getDocs(collection(db, "students"));
         const studentsPerClass: Record<string, number> = {};
         
+        const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
         studentsSnap.docs.forEach(doc => {
-            const cls = doc.data().class;
+            const cls = normalizeClassName(doc.data().class);
             studentsPerClass[cls] = (studentsPerClass[cls] || 0) + 1;
         });
 
@@ -26,7 +27,6 @@ export async function GET(request: Request) {
         const presencesPerClass: Record<string, number> = {};
         const completedClasses = new Set<string>();
 
-        const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
         attendanceSnap.docs.forEach(doc => {
             const data = doc.data();
             const clsNorm = normalizeClassName(data.studentClass);

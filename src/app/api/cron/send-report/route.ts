@@ -69,7 +69,7 @@ export async function GET(request: Request) {
 
         // Buscar todas as turmas cadastradas nos alunos
         const studentsSnap = await getDocs(collection(db, "students"));
-        const allClasses = Array.from(new Set(studentsSnap.docs.map(d => d.data().class as string))).sort();
+        const allClasses = Array.from(new Set(studentsSnap.docs.map(d => normalizeClassName(d.data().class)))).sort();
         
         const missingClasses = allClasses.filter(cls => !completedClassesSet.has(cls));
 

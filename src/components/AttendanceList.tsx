@@ -57,6 +57,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
         fetchSettings();
     }, []);
 
+    const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
     // Define padrão das presenças e valida regras de horário
     useEffect(() => {
         async function fetchCurrentStatus() {
@@ -68,7 +69,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 const q = query(
                     collection(db, "attendance"),
                     where("date", "==", today),
-                    where("studentClass", "==", students[0].class)
+                    where("studentClass", "==", normalizeClassName(students[0].class))
                 );
                 const snap = await getDocs(q);
 
@@ -213,7 +214,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 batch.set(docRef, {
                     studentId: s.id,
                     studentName: s.name,
-                    studentClass: s.class,
+                    studentClass: normalizeClassName(s.class),
                     date: today,
                     status: attendance[s.id],
                     teacher: user?.email,
@@ -226,7 +227,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             await addDoc(historyRef, {
                 action: isUpdateMode ? "UPDATE" : "CREATE",
                 date: today,
-                studentClass: students[0]?.class,
+                studentClass: normalizeClassName(students[0]?.class),
                 teacher: user?.email,
                 timestamp: serverTimestamp(),
                 snapshot: attendance 

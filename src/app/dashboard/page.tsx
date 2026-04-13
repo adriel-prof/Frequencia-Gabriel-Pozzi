@@ -220,7 +220,7 @@ export default function DashboardPage() {
 
                     {(() => {
                         const cls = selectedClass;
-                        const classRecords = filteredRecords.filter(r => r.studentClass === cls);
+                        const classRecords = filteredRecords.filter(r => normalizeClassName(r.studentClass) === cls);
                         const totalPresences = classRecords.filter(r => r.status === "P").length;
                         const totalAbsences = classRecords.filter(r => r.status === "F").length;
 

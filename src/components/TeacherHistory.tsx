@@ -53,8 +53,9 @@ export function TeacherHistory() {
         );
     }
 
+    const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
     const filteredRecords = records.filter(r => r.date === filterDate);
-    const classes = Array.from(new Set(filteredRecords.map(r => r.studentClass)));
+    const classes = Array.from(new Set(filteredRecords.map(r => normalizeClassName(r.studentClass))));
 
     return (
         <div className="space-y-6 animate-fade-in">
@@ -81,8 +82,8 @@ export function TeacherHistory() {
             ) : !selectedClass ? (
                 <div className="space-y-6 animate-fade-in">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {classes.sort().map(cls => {
-                            const classRecords = filteredRecords.filter(r => r.studentClass === cls);
+                        {classes.sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true, sensitivity: 'base' })).map(cls => {
+                            const classRecords = filteredRecords.filter(r => normalizeClassName(r.studentClass) === cls);
                             const totalPresences = classRecords.filter(r => r.status === "P").length;
                             const totalAbsences = classRecords.filter(r => r.status === "F").length;
                             const totalDispensed = classRecords.filter(r => r.status === "D").length;
@@ -144,7 +145,7 @@ export function TeacherHistory() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
-                                    {filteredRecords.filter(r => r.studentClass === selectedClass).map(record => (
+                                    {filteredRecords.filter(r => normalizeClassName(r.studentClass) === selectedClass).map(record => (
                                         <tr key={record.id} className="hover:bg-gray-50/50">
                                             <td className="px-6 py-3 text-gray-500">{record.studentId}</td>
                                             <td className="px-6 py-3 font-medium text-gray-900">{record.studentName}</td>
