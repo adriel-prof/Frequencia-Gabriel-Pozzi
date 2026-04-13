@@ -66,7 +66,7 @@ function PrintContent() {
     }
 
     const getColorClass = (perc: number) => {
-        if (perc >= 95) return "text-green-600";
+        if (perc >= 90) return "text-green-600";
         if (perc >= 85) return "text-yellow-500";
         return "text-red-600";
     };

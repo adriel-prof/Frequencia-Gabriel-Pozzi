@@ -176,7 +176,7 @@ export default function DashboardPage() {
 
                             let ringColor = "group-hover:ring-red-500";
                             let textColor = "text-red-600";
-                            if (percentage >= 95) { ringColor = "group-hover:ring-green-500"; textColor = "text-green-600"; }
+                            if (percentage >= 90) { ringColor = "group-hover:ring-green-500"; textColor = "text-green-600"; }
                             else if (percentage >= 85) { ringColor = "group-hover:ring-yellow-500"; textColor = "text-yellow-600"; }
 
                             return (

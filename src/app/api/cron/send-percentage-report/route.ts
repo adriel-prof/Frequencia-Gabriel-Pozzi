@@ -76,7 +76,7 @@ export async function GET(request: Request) {
                 percentage = Math.round((present / total) * 100);
             }
 
-            const statusColor = !isCompleted ? "#9ca3af" : (percentage >= 90 ? "#16a34a" : (percentage >= 75 ? "#ca8a04" : "#dc2626"));
+            const statusColor = !isCompleted ? "#9ca3af" : (percentage >= 90 ? "#16a34a" : (percentage >= 85 ? "#ca8a04" : "#dc2626"));
             const statusText = !isCompleted ? "Pendente" : `${percentage}%`;
 
             tableRows += `
