@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { doc, getDocs, query, orderBy, writeBatch, collection } from "firebase/firestore";
+import { doc, getDocs, query, orderBy, writeBatch, collection, where } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 
 
@@ -29,19 +29,25 @@ export default function DashboardPage() {
 
     useEffect(() => {
         async function fetchRecords() {
+            setIsLoading(true);
             try {
-                const q = query(collection(db, "attendance"), orderBy("studentName", "asc"));
+                // OTIMIZAÇÃO: Busca apenas registros da data selecionada no servidor
+                const q = query(
+                    collection(db, "attendance"), 
+                    where("date", "==", filterDate),
+                    orderBy("studentName", "asc")
+                );
                 const snapshot = await getDocs(q);
                 const data = snapshot.docs
                     .map(doc => ({
                         id: doc.id,
                         ...doc.data()
-                    }))
-                    .filter(record => (record as AttendanceRecord).date >= LOCK_DATE) as AttendanceRecord[];
+                    })) as AttendanceRecord[];
 
                 setRecords(data);
 
-                // Find all existing classes
+                // Find all existing classes (Otimizado: buscar apenas uma vez ou manter em cache se necessário)
+                // Para 200 alunos, buscar a lista de turmas ainda é viável aqui
                 const studentsSnap = await getDocs(collection(db, "students"));
                 const uniqueClasses = Array.from(new Set(studentsSnap.docs.map(d => d.data().class as string))).sort();
                 setAllClasses(uniqueClasses);
@@ -52,7 +58,7 @@ export default function DashboardPage() {
             }
         }
         fetchRecords();
-    }, []);
+    }, [filterDate]);
 
     if (isLoading) {
         return (
@@ -63,7 +69,7 @@ export default function DashboardPage() {
     }
 
     const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
-    const filteredRecords = records.filter(r => r.date === filterDate);
+    const filteredRecords = records;
     const classes = Array.from(new Set(filteredRecords.map(r => normalizeClassName(r.studentClass))));
     const missingClasses = allClasses.filter(cls => !classes.includes(normalizeClassName(cls)));
 

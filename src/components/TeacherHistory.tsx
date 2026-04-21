@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, where } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 
 type AttendanceRecord = {
@@ -25,15 +25,20 @@ export function TeacherHistory() {
 
     useEffect(() => {
         async function fetchRecords() {
+            setIsLoading(true);
             try {
-                const q = query(collection(db, "attendance"), orderBy("studentName", "asc"));
+                // OTIMIZAÇÃO: Filtra por data no servidor para evitar carregar todo o histórico
+                const q = query(
+                    collection(db, "attendance"), 
+                    where("date", "==", filterDate),
+                    orderBy("studentName", "asc")
+                );
                 const snapshot = await getDocs(q);
                 const data = snapshot.docs
                     .map(doc => ({
                         id: doc.id,
                         ...doc.data()
-                    }))
-                    .filter(record => (record as AttendanceRecord).date >= LOCK_DATE) as AttendanceRecord[];
+                    })) as AttendanceRecord[];
 
                 setRecords(data);
             } catch (err) {
@@ -43,7 +48,7 @@ export function TeacherHistory() {
             }
         }
         fetchRecords();
-    }, []);
+    }, [filterDate]);
 
     if (isLoading) {
         return (
@@ -54,7 +59,7 @@ export function TeacherHistory() {
     }
 
     const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
-    const filteredRecords = records.filter(r => r.date === filterDate);
+    const filteredRecords = records;
     const classes = Array.from(new Set(filteredRecords.map(r => normalizeClassName(r.studentClass))));
 
     return (
