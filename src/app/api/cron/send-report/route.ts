@@ -1,33 +1,31 @@
 import { NextResponse } from 'next/server';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebaseConfig';
+import { adminDb } from '@/lib/firebaseAdmin';
 import nodemailer from 'nodemailer';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-    // A rota agora pode ser disparada tanto por um Cron Job quanto pelo clique do Professor
     try {
         const today = new Date().toISOString().split("T")[0];
         const LOCK_DATE = "2026-04-06";
 
-        // Buscar Chamadas a partir da data de corte para calcular porcentagens
-        const attendanceRef = collection(db, "attendance");
-        const q = query(attendanceRef, where("date", ">=", LOCK_DATE));
-        const snapshot = await getDocs(q);
+        // Buscar Chamadas a partir da data de corte para calcular porcentagens (USANDO ADMIN SDK)
+        const attendanceRef = adminDb.collection("attendance");
+        const snapshot = await attendanceRef.where("date", ">=", LOCK_DATE).get();
 
         // Agrupar faltosos por turma e registrar turmas concluídas
         type AttendanceDoc = { studentClass: string; studentId: number; studentName: string; status: string; date: string; };
 
         // Dados para o relatório de HOJE
         const absencesByClass: Record<string, { studentName: string; studentId: number; absenceRate: number }[]> = {};
-        const completedClassesSet = new Set<string>();
+        const completedClassesToday = new Set<string>();
 
         // Dados para calcular a porcentagem geral de cada aluno (reincidência)
         const studentStats: Record<number, { total: number; absences: number; name: string; class: string }> = {};
 
         const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
-        snapshot.docs.forEach(doc => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        snapshot.docs.forEach((doc: any) => {
             const data = doc.data() as AttendanceDoc;
             const clsNorm = normalizeClassName(data.studentClass);
 
@@ -42,12 +40,13 @@ export async function GET(request: Request) {
 
             // Ações específicas para registros de HOJE
             if (data.date === today) {
-                completedClassesSet.add(clsNorm);
+                completedClassesToday.add(clsNorm);
             }
         });
 
         // Agora que temos todas as estatísticas, filtramos quem faltou HOJE para montar o relatório
-        snapshot.docs.forEach(doc => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        snapshot.docs.forEach((doc: any) => {
             const data = doc.data() as AttendanceDoc;
             const clsNorm = normalizeClassName(data.studentClass);
             if (data.date === today && data.status === "F") {
@@ -68,10 +67,12 @@ export async function GET(request: Request) {
 
 
         // Buscar todas as turmas cadastradas nos alunos
-        const studentsSnap = await getDocs(collection(db, "students"));
-        const allClasses = Array.from(new Set(studentsSnap.docs.map(d => normalizeClassName(d.data().class)))).sort();
+        const studentsSnap = await adminDb.collection("students").get();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const allClasses = (Array.from(new Set(studentsSnap.docs.map((d: any) => normalizeClassName(d.data().class)))) as string[])
+            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
-        const missingClasses = allClasses.filter(cls => !completedClassesSet.has(cls));
+        const missingClasses = allClasses.filter(cls => !completedClassesToday.has(cls));
 
         // Buscar admins para enviar e-mail
         const adminEmails: string[] = [];
@@ -87,12 +88,13 @@ export async function GET(request: Request) {
             // Comportamento normal automático: Busca os e-mails dos Admins Base
 
             // 1. Busca dos Professores promovidos a 'Admin'
-            const rolesRef = collection(db, "roles");
-            const rolesQuery = query(rolesRef, where("role", "==", "admin"));
-            const rolesSnapshot = await getDocs(rolesQuery);
-            const roleEmails = rolesSnapshot.docs.map(d => d.data().email);
+            const rolesRef = adminDb.collection("roles");
+            const rolesSnapshot = await rolesRef.where("role", "==", "admin").get();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const roleEmails = rolesSnapshot.docs.map((d: any) => d.data().email);
 
-            roleEmails.forEach(email => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            roleEmails.forEach((email: any) => {
                 if (!adminEmails.includes(email)) adminEmails.push(email);
             });
 

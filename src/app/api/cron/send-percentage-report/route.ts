@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebaseConfig';
+import { adminDb } from '@/lib/firebaseAdmin';
 import nodemailer from 'nodemailer';
 
 export const dynamic = 'force-dynamic';
@@ -10,20 +9,20 @@ export async function GET(request: Request) {
         const today = new Date().toISOString().split("T")[0];
         const LOCK_DATE = "2026-04-06";
 
-        // 1. Buscar todos os alunos para saber o total por turma
-        const studentsSnap = await getDocs(collection(db, "students"));
+        // 1. Buscar todos os alunos para saber o total por turma (USANDO ADMIN SDK)
+        const studentsSnap = await adminDb.collection("students").get();
         const studentsPerClass: Record<string, number> = {};
 
         const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
-        studentsSnap.docs.forEach(doc => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        studentsSnap.docs.forEach((doc: any) => {
             const cls = normalizeClassName(doc.data().class);
             studentsPerClass[cls] = (studentsPerClass[cls] || 0) + 1;
         });
 
         // 2. Buscar as presenças desde o LOCK_DATE para cálculo acumulado (Ano)
-        const attendanceRef = collection(db, "attendance");
-        const q = query(attendanceRef, where("date", ">=", LOCK_DATE));
-        const attendanceSnap = await getDocs(q);
+        const attendanceRef = adminDb.collection("attendance");
+        const attendanceSnap = await attendanceRef.where("date", ">=", LOCK_DATE).get();
 
         // Agregadores para o cálculo acumulado (Acumulado do Ano)
         const yearPresencePerClass: Record<string, number> = {};
@@ -33,7 +32,8 @@ export async function GET(request: Request) {
         const todayPresentPerClass: Record<string, number> = {};
         const completedClassesToday = new Set<string>();
 
-        attendanceSnap.docs.forEach(doc => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        attendanceSnap.docs.forEach((doc: any) => {
             const data = doc.data();
             const clsNorm = normalizeClassName(data.studentClass);
             
@@ -61,10 +61,9 @@ export async function GET(request: Request) {
         if (targetEmail) {
             adminEmails.push(targetEmail);
         } else {
-            const rolesRef = collection(db, "roles");
-            const rolesQuery = query(rolesRef, where("role", "==", "admin"));
-            const rolesSnapshot = await getDocs(rolesQuery);
-            rolesSnapshot.docs.forEach(d => {
+            const rolesSnapshot = await adminDb.collection("roles").where("role", "==", "admin").get();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            rolesSnapshot.docs.forEach((d: any) => {
                 const email = d.data().email;
                 if (email && !adminEmails.includes(email)) adminEmails.push(email);
             });
