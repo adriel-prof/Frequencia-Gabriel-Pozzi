@@ -10,6 +10,7 @@
     "generate-credentials": "node ./scripts/generate-firebase-credentials.js"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
     "firebase": "^12.11.0",
     "firebase-admin": "^13.8.0",
     "next": "^14.2.35",
