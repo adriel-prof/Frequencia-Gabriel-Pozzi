@@ -18,11 +18,11 @@ export async function GET(request: Request) {
 
         // Agrupar faltosos por turma e registrar turmas concluídas
         type AttendanceDoc = { studentClass: string; studentId: number; studentName: string; status: string; date: string; };
-        
+
         // Dados para o relatório de HOJE
         const absencesByClass: Record<string, { studentName: string; studentId: number; absenceRate: number }[]> = {};
         const completedClassesSet = new Set<string>();
-        
+
         // Dados para calcular a porcentagem geral de cada aluno (reincidência)
         const studentStats: Record<number, { total: number; absences: number; name: string; class: string }> = {};
 
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
         snapshot.docs.forEach(doc => {
             const data = doc.data() as AttendanceDoc;
             const clsNorm = normalizeClassName(data.studentClass);
-            
+
             // Registrar estatística geral do aluno
             if (!studentStats[data.studentId]) {
                 studentStats[data.studentId] = { total: 0, absences: 0, name: data.studentName, class: clsNorm };
@@ -54,10 +54,10 @@ export async function GET(request: Request) {
                 if (!absencesByClass[clsNorm]) {
                     absencesByClass[clsNorm] = [];
                 }
-                
+
                 const stats = studentStats[data.studentId];
                 const absenceRate = Math.round((stats.absences / stats.total) * 100);
-                
+
                 absencesByClass[clsNorm].push({
                     studentName: data.studentName,
                     studentId: data.studentId,
@@ -70,7 +70,7 @@ export async function GET(request: Request) {
         // Buscar todas as turmas cadastradas nos alunos
         const studentsSnap = await getDocs(collection(db, "students"));
         const allClasses = Array.from(new Set(studentsSnap.docs.map(d => normalizeClassName(d.data().class)))).sort();
-        
+
         const missingClasses = allClasses.filter(cls => !completedClassesSet.has(cls));
 
         // Buscar admins para enviar e-mail
@@ -143,7 +143,7 @@ export async function GET(request: Request) {
                     </div>
             `;
         } else {
-             htmlContent += `
+            htmlContent += `
                     <div style="margin-bottom: 24px; padding: 16px; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;">
                         <h3 style="margin-top: 0; color: #166534; font-size: 16px;">
                             ✅ Todas as chamadas concluídas!
@@ -205,27 +205,42 @@ export async function GET(request: Request) {
             </div>
         `;
 
+        // Verificação de Variáveis de Ambiente Críticas
+        const emailUser = process.env.EMAIL_USER;
+        const emailPass = process.env.EMAIL_PASS;
+        const emailHost = process.env.EMAIL_HOST || "smtp.gmail.com";
+        const emailPort = Number(process.env.EMAIL_PORT) || 465;
+
+        if (!emailUser || !emailPass) {
+            console.error("ERRO: Variáveis EMAIL_USER ou EMAIL_PASS não configuradas.");
+            return NextResponse.json({ error: 'Configuração de e-mail incompleta no servidor.' }, { status: 500 });
+        }
+
         // Configuração do servidor de e-mail
-        const port = Number(process.env.EMAIL_PORT) || 587;
         const transporter = nodemailer.createTransport({
-            host: process.env.EMAIL_HOST || "smtp.office365.com",
-            port: port,
-            secure: port === 465, // true para porta 465 (autenticação SSL)
+            host: emailHost,
+            port: emailPort,
+            secure: emailPort === 465, 
             auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS,
+                user: emailUser,
+                pass: emailPass,
             },
+            // Aumentar timeout para evitar falhas em conexões lentas
+            connectionTimeout: 10000,
+            greetingTimeout: 10000,
         });
 
         // Envio
         const mailOptions = {
-            from: `"Busca Ativa EE Gabriel Pozzi" <${process.env.EMAIL_USER}>`,
+            from: `"Busca Ativa EE Gabriel Pozzi" <${emailUser}>`,
             to: adminEmails.join(', '),
             subject: `🚨 Tabela de Faltas Diárias (${dateBR}) - Alunos para Contato`,
             html: htmlContent
         };
 
+        console.log(`Tentando enviar e-mail para: ${adminEmails.join(', ')}`);
         const info = await transporter.sendMail(mailOptions);
+        console.log(`E-mail enviado com sucesso: ${info.messageId}`);
 
         return NextResponse.json({
             message: 'Relatório construído e enviado com sucesso ao Administrador / Secretaria!',
@@ -233,7 +248,7 @@ export async function GET(request: Request) {
             totalEmailsFound: adminEmails.length
         });
     } catch (error) {
-        console.error("Erro no fluxo do Cron:", error);
+        console.error("ERRO CRÍTICO no fluxo do Cron/Relatório:", error);
         return NextResponse.json({
             error: 'Falha interna ao preparar ou disparar o e-mail.',
             details: String(error)

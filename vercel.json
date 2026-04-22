@@ -2,7 +2,11 @@
     "crons": [
         {
             "path": "/api/cron/send-report",
-            "schedule": "0 12 * * 1-5"
+            "schedule": "0 13 * * 1-5"
+        },
+        {
+            "path": "/api/cron/send-percentage-report",
+            "schedule": "0 13 * * 1-5"
         }
     ]
 }

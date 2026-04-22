@@ -8,32 +8,47 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
     try {
         const today = new Date().toISOString().split("T")[0];
+        const LOCK_DATE = "2026-04-06";
 
         // 1. Buscar todos os alunos para saber o total por turma
         const studentsSnap = await getDocs(collection(db, "students"));
         const studentsPerClass: Record<string, number> = {};
-        
+
         const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
         studentsSnap.docs.forEach(doc => {
             const cls = normalizeClassName(doc.data().class);
             studentsPerClass[cls] = (studentsPerClass[cls] || 0) + 1;
         });
 
-        // 2. Buscar as presenças do dia
+        // 2. Buscar as presenças desde o LOCK_DATE para cálculo acumulado (Ano)
         const attendanceRef = collection(db, "attendance");
-        const q = query(attendanceRef, where("date", "==", today));
+        const q = query(attendanceRef, where("date", ">=", LOCK_DATE));
         const attendanceSnap = await getDocs(q);
 
-        const presencesPerClass: Record<string, number> = {};
-        const completedClasses = new Set<string>();
+        // Agregadores para o cálculo acumulado (Acumulado do Ano)
+        const yearPresencePerClass: Record<string, number> = {};
+        const yearTotalPerClass: Record<string, number> = {};
+        
+        // Agregadores específicos de HOJE
+        const todayPresentPerClass: Record<string, number> = {};
+        const completedClassesToday = new Set<string>();
 
         attendanceSnap.docs.forEach(doc => {
             const data = doc.data();
             const clsNorm = normalizeClassName(data.studentClass);
-            completedClasses.add(clsNorm);
-            // Consideramos P (Presença) e D (Dispensa Médica) como "Frequentes" para o cálculo
+            
+            // Contagem acumulada (Ano)
+            yearTotalPerClass[clsNorm] = (yearTotalPerClass[clsNorm] || 0) + 1;
             if (data.status === "P" || data.status === "D") {
-                presencesPerClass[clsNorm] = (presencesPerClass[clsNorm] || 0) + 1;
+                yearPresencePerClass[clsNorm] = (yearPresencePerClass[clsNorm] || 0) + 1;
+            }
+
+            // Contagem específica de HOJE
+            if (data.date === today) {
+                completedClassesToday.add(clsNorm);
+                if (data.status === "P" || data.status === "D") {
+                    todayPresentPerClass[clsNorm] = (todayPresentPerClass[clsNorm] || 0) + 1;
+                }
             }
         });
 
@@ -49,7 +64,10 @@ export async function GET(request: Request) {
             const rolesRef = collection(db, "roles");
             const rolesQuery = query(rolesRef, where("role", "==", "admin"));
             const rolesSnapshot = await getDocs(rolesQuery);
-            rolesSnapshot.docs.forEach(d => adminEmails.push(d.data().email));
+            rolesSnapshot.docs.forEach(d => {
+                const email = d.data().email;
+                if (email && !adminEmails.includes(email)) adminEmails.push(email);
+            });
 
             const rootAdmin = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
             if (rootAdmin && !adminEmails.includes(rootAdmin)) adminEmails.push(rootAdmin);
@@ -69,57 +87,68 @@ export async function GET(request: Request) {
 
         let tableRows = "";
         sortedClasses.forEach(cls => {
-            const total = studentsPerClass[cls];
-            const present = presencesPerClass[cls] || 0;
-            const isCompleted = completedClasses.has(cls);
-            
-            let percentage = 0;
-            if (isCompleted && total > 0) {
-                percentage = Math.round((present / total) * 100);
+            const totalStudents = studentsPerClass[cls];
+            const presentToday = todayPresentPerClass[cls] || 0;
+            const isCompletedToday = completedClassesToday.has(cls);
+
+            // Porcentagem de HOJE
+            let todayPercentage = 0;
+            if (isCompletedToday && totalStudents > 0) {
+                todayPercentage = Math.round((presentToday / totalStudents) * 100);
             }
 
-            const statusColor = !isCompleted ? "#9ca3af" : (percentage >= 90 ? "#16a34a" : (percentage >= 85 ? "#ca8a04" : "#dc2626"));
-            const statusText = !isCompleted ? "Pendente" : `${percentage}%`;
+            // Porcentagem ACUMULADA (Ano)
+            const yearPresence = yearPresencePerClass[cls] || 0;
+            const yearTotal = yearTotalPerClass[cls] || 0;
+            let yearPercentage = 0;
+            if (yearTotal > 0) {
+                yearPercentage = Math.round((yearPresence / yearTotal) * 100);
+            }
+
+            const statusColor = !isCompletedToday ? "#9ca3af" : (todayPercentage >= 90 ? "#16a34a" : (todayPercentage >= 85 ? "#ca8a04" : "#dc2626"));
+            const todayStatusText = !isCompletedToday ? "Pendente" : `${todayPercentage}%`;
 
             tableRows += `
                 <tr style="border-bottom: 1px solid #f3f4f6;">
                     <td style="padding: 12px; font-weight: bold; color: #111827;">Turma ${cls}</td>
-                    <td style="padding: 12px; text-align: center; color: #4b5563;">${total}</td>
-                    <td style="padding: 12px; text-align: center; color: #4b5563;">${isCompleted ? present : "-"}</td>
+                    <td style="padding: 12px; text-align: center; color: #4b5563;">${totalStudents}</td>
                     <td style="padding: 12px; text-align: center;">
                         <span style="background-color: ${statusColor}15; color: ${statusColor}; padding: 4px 8px; border-radius: 6px; font-weight: bold; font-size: 13px;">
-                            ${statusText}
+                            ${todayStatusText}
                         </span>
+                    </td>
+                    <td style="padding: 12px; text-align: center; font-weight: bold; color: #1e293b;">
+                        ${yearPercentage}%
                     </td>
                 </tr>
             `;
         });
 
         const htmlContent = `
-            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #374151; max-width: 600px; margin: 20px auto; border: 1px solid #e5e7eb; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
+            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #374151; max-width: 650px; margin: 20px auto; border: 1px solid #e5e7eb; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
                 <div style="background-color: #1e293b; padding: 30px 20px; text-align: center;">
-                    <h2 style="color: #ffffff; margin: 0; font-size: 22px; letter-spacing: -0.025em;">📊 Resumo de Frequência por Turma</h2>
-                    <p style="color: #94a3b8; margin: 8px 0 0 0; font-size: 14px;">Data: <strong>${dateBR}</strong></p>
+                    <h2 style="color: #ffffff; margin: 0; font-size: 22px; letter-spacing: -0.025em;">📊 Indicadores Consolidados de Frequência</h2>
+                    <p style="color: #94a3b8; margin: 8px 0 0 0; font-size: 14px;">Relatório de <strong>${dateBR}</strong></p>
                 </div>
                 <div style="padding: 24px;">
                     <p style="margin-bottom: 20px; font-size: 15px; line-height: 1.6;">
-                        Prezada Direção, segue abaixo o comparativo de engajamento e frequência das turmas referente ao dia de hoje:
+                        Prezada Direção, segue o comparativo de frequência diária e o <strong>acumulado anual (desde 06/04)</strong> por turma:
                     </p>
                     <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
                         <thead>
                             <tr style="background-color: #f8fafc; text-align: center; color: #64748b; font-weight: bold; font-size: 12px; text-transform: uppercase;">
                                 <th style="padding: 12px; text-align: left;">Turma</th>
-                                <th style="padding: 12px;">Total</th>
-                                <th style="padding: 12px;">Presenças</th>
-                                <th style="padding: 12px;">Frequência</th>
+                                <th style="padding: 12px;">Total Alunos</th>
+                                <th style="padding: 12px;">Hoje</th>
+                                <th style="padding: 12px;">Acumulado Ano</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${tableRows}
                         </tbody>
                     </table>
-                    <div style="margin-top: 24px; padding: 12px; background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; font-size: 13px; color: #92400e;">
-                        <strong>Nota:</strong> Turmas marcadas como "Pendente" ainda não tiveram o diário finalizado por nenhum professor hoje.
+                    <div style="margin-top: 24px; padding: 12px; background-color: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; font-size: 13px; color: #0369a1;">
+                        <strong>Informação:</strong> O cálculo acumulado considera todos os registros de presença realizados desde o início do período letivo (06/04/2026).
                     </div>
                 </div>
                 <div style="background-color: #f9fafb; padding: 16px; text-align: center; border-top: 1px solid #f1f5f9; font-size: 11px; color: #94a3b8;">
@@ -128,31 +157,44 @@ export async function GET(request: Request) {
             </div>
         `;
 
-        // 5. Configurar Nodemailer
-        const port = Number(process.env.EMAIL_PORT) || 587;
+        // 5. Configurar Nodemailer com validação
+        const emailUser = process.env.EMAIL_USER;
+        const emailPass = process.env.EMAIL_PASS;
+        const emailHost = process.env.EMAIL_HOST || "smtp.gmail.com";
+        const emailPort = Number(process.env.EMAIL_PORT) || 465;
+
+        if (!emailUser || !emailPass) {
+            console.error("ERRO: EMAIL_USER ou EMAIL_PASS não configurados.");
+            return NextResponse.json({ error: 'Configuração de e-mail incompleta.' }, { status: 500 });
+        }
+
         const transporter = nodemailer.createTransport({
-            host: process.env.EMAIL_HOST || "smtp.office365.com",
-            port: port,
-            secure: port === 465,
+            host: emailHost,
+            port: emailPort,
+            secure: emailPort === 465,
             auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS,
+                user: emailUser,
+                pass: emailPass,
             },
+            connectionTimeout: 10000,
+            greetingTimeout: 10000,
         });
 
+        console.log(`Enviando indicadores de frequência para: ${adminEmails.join(', ')}`);
         await transporter.sendMail({
-            from: `"Indicadores EE Gabriel Pozzi" <${process.env.EMAIL_USER}>`,
+            from: `"Indicadores EE Gabriel Pozzi" <${emailUser}>`,
             to: adminEmails.join(', '),
-            subject: `📊 Indicadores de Frequência (${dateBR})`,
+            subject: `📊 Indicadores de Frequência Consolidada (${dateBR})`,
             html: htmlContent
         });
 
         return NextResponse.json({
             message: 'Relatório de porcentagem enviado com sucesso!',
-            totalClasses: sortedClasses.length
+            totalClasses: sortedClasses.length,
+            recipients: adminEmails.length
         });
     } catch (error) {
-        console.error("Erro no relatório de porcentagem:", error);
+        console.error("ERRO no relatório de porcentagem:", error);
         return NextResponse.json({ error: String(error) }, { status: 500 });
     }
 }
