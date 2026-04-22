@@ -39,6 +39,7 @@ export const adminDb = (() => {
     clientEmail: !!clientEmail,
     privateKey: !!privateKey
   });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return null as any;
 })();
 
