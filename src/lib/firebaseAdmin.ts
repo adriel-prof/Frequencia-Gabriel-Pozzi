@@ -23,9 +23,23 @@ function getAdminDb() {
   return admin.firestore();
 }
 
-export const adminDb = admin.apps.length || (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY) 
-  ? getAdminDb() 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  : null as any;
+export const adminDb = (() => {
+  if (admin.apps.length) return admin.firestore();
+  
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+
+  if (projectId && clientEmail && privateKey) {
+    return getAdminDb();
+  }
+  
+  console.error("Firebase Admin falhou: Variáveis faltando:", {
+    projectId: !!projectId,
+    clientEmail: !!clientEmail,
+    privateKey: !!privateKey
+  });
+  return null as any;
+})();
 
 export { admin };
