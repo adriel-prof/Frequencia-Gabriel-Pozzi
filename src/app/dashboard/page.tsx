@@ -27,6 +27,20 @@ export default function DashboardPage() {
     const [selectedClass, setSelectedClass] = useState<string | null>(null);
     const [allClasses, setAllClasses] = useState<string[]>([]);
 
+    // OTIMIZAÇÃO: Busca a lista de turmas apenas uma vez ao carregar o dashboard
+    useEffect(() => {
+        async function fetchClasses() {
+            try {
+                const studentsSnap = await getDocs(collection(db, "students"));
+                const uniqueClasses = Array.from(new Set(studentsSnap.docs.map(d => d.data().class as string))).sort();
+                setAllClasses(uniqueClasses);
+            } catch (err) {
+                console.error("Erro ao buscar turmas:", err);
+            }
+        }
+        fetchClasses();
+    }, []);
+
     useEffect(() => {
         async function fetchRecords() {
             setIsLoading(true);
@@ -45,12 +59,6 @@ export default function DashboardPage() {
                     })) as AttendanceRecord[];
 
                 setRecords(data);
-
-                // Find all existing classes (Otimizado: buscar apenas uma vez ou manter em cache se necessário)
-                // Para 200 alunos, buscar a lista de turmas ainda é viável aqui
-                const studentsSnap = await getDocs(collection(db, "students"));
-                const uniqueClasses = Array.from(new Set(studentsSnap.docs.map(d => d.data().class as string))).sort();
-                setAllClasses(uniqueClasses);
             } catch (err) {
                 console.error("Erro ao buscar registros:", err);
             } finally {

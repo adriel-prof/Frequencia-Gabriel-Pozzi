@@ -20,37 +20,51 @@ export async function GET(request: Request) {
             studentsPerClass[cls] = (studentsPerClass[cls] || 0) + 1;
         });
 
-        // 2. Buscar as presenças desde o LOCK_DATE para cálculo acumulado (Ano)
+        // 2. OTIMIZAÇÃO: Não buscamos mais todos os documentos. Usaremos count() por turma.
         const attendanceRef = adminDb.collection("attendance");
-        const attendanceSnap = await attendanceRef.where("date", ">=", LOCK_DATE).get();
-
-        // Agregadores para o cálculo acumulado (Acumulado do Ano)
-        const yearPresencePerClass: Record<string, number> = {};
-        const yearTotalPerClass: Record<string, number> = {};
         
         // Agregadores específicos de HOJE
         const todayPresentPerClass: Record<string, number> = {};
         const completedClassesToday = new Set<string>();
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        attendanceSnap.docs.forEach((doc: any) => {
+        // Agregadores do Ano (Acumulado)
+        const yearPresencePerClass: Record<string, number> = {};
+        const yearTotalPerClass: Record<string, number> = {};
+
+        // 2.1 Buscar dados de HOJE primeiro (para saber quem já fez a chamada)
+        const todaySnap = await attendanceRef.where("date", "==", today).get();
+        todaySnap.docs.forEach((doc: any) => {
             const data = doc.data();
             const clsNorm = normalizeClassName(data.studentClass);
-            
-            // Contagem acumulada (Ano)
-            yearTotalPerClass[clsNorm] = (yearTotalPerClass[clsNorm] || 0) + 1;
+            completedClassesToday.add(clsNorm);
             if (data.status === "P" || data.status === "D") {
-                yearPresencePerClass[clsNorm] = (yearPresencePerClass[clsNorm] || 0) + 1;
-            }
-
-            // Contagem específica de HOJE
-            if (data.date === today) {
-                completedClassesToday.add(clsNorm);
-                if (data.status === "P" || data.status === "D") {
-                    todayPresentPerClass[clsNorm] = (todayPresentPerClass[clsNorm] || 0) + 1;
-                }
+                todayPresentPerClass[clsNorm] = (todayPresentPerClass[clsNorm] || 0) + 1;
             }
         });
+
+        // 2.2 Para cada turma, buscar o acumulado via count()
+        const sortedClasses = Object.keys(studentsPerClass).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+        
+        for (const cls of sortedClasses) {
+            // Contagem total de registros da turma no ano
+            const totalSnap = await attendanceRef
+                .where("studentClass", "==", cls)
+                .where("date", ">=", LOCK_DATE)
+                .count()
+                .get();
+            
+            // Contagem de presenças da turma no ano
+            // Nota: Como 'in' custa o mesmo que queries separadas, mas é mais limpo
+            const presenceSnap = await attendanceRef
+                .where("studentClass", "==", cls)
+                .where("date", ">=", LOCK_DATE)
+                .where("status", "in", ["P", "D"])
+                .count()
+                .get();
+
+            yearTotalPerClass[cls] = totalSnap.data().count;
+            yearPresencePerClass[cls] = presenceSnap.data().count;
+        }
 
         // 3. Buscar admins para destinatários
         const adminEmails: string[] = [];
@@ -81,7 +95,6 @@ export async function GET(request: Request) {
         }
 
         // 4. Montar o Relatório
-        const sortedClasses = Object.keys(studentsPerClass).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
         const dateBR = new Date().toLocaleDateString("pt-BR");
 
         let tableRows = "";

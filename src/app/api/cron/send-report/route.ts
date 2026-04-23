@@ -9,61 +9,61 @@ export async function GET(request: Request) {
         const today = new Date().toISOString().split("T")[0];
         const LOCK_DATE = "2026-04-06";
 
-        // Buscar Chamadas a partir da data de corte para calcular porcentagens (USANDO ADMIN SDK)
+        // OTIMIZAÇÃO: Busca apenas registros de HOJE para identificar pendências e faltosos
         const attendanceRef = adminDb.collection("attendance");
-        const snapshot = await attendanceRef.where("date", ">=", LOCK_DATE).get();
+        const todaySnapshot = await attendanceRef.where("date", "==", today).get();
 
         // Agrupar faltosos por turma e registrar turmas concluídas
         type AttendanceDoc = { studentClass: string; studentId: number; studentName: string; status: string; date: string; };
 
-        // Dados para o relatório de HOJE
         const absencesByClass: Record<string, { studentName: string; studentId: number; absenceRate: number }[]> = {};
         const completedClassesToday = new Set<string>();
 
-        // Dados para calcular a porcentagem geral de cada aluno (reincidência)
-        const studentStats: Record<number, { total: number; absences: number; name: string; class: string }> = {};
-
         const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        snapshot.docs.forEach((doc: any) => {
+        
+        const todayAbsences: AttendanceDoc[] = [];
+
+        todaySnapshot.docs.forEach((doc: any) => {
             const data = doc.data() as AttendanceDoc;
             const clsNorm = normalizeClassName(data.studentClass);
-
-            // Registrar estatística geral do aluno
-            if (!studentStats[data.studentId]) {
-                studentStats[data.studentId] = { total: 0, absences: 0, name: data.studentName, class: clsNorm };
-            }
-            studentStats[data.studentId].total += 1;
+            completedClassesToday.add(clsNorm);
             if (data.status === "F") {
-                studentStats[data.studentId].absences += 1;
-            }
-
-            // Ações específicas para registros de HOJE
-            if (data.date === today) {
-                completedClassesToday.add(clsNorm);
+                todayAbsences.push(data);
             }
         });
 
-        // Agora que temos todas as estatísticas, filtramos quem faltou HOJE para montar o relatório
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        snapshot.docs.forEach((doc: any) => {
-            const data = doc.data() as AttendanceDoc;
-            const clsNorm = normalizeClassName(data.studentClass);
-            if (data.date === today && data.status === "F") {
-                if (!absencesByClass[clsNorm]) {
-                    absencesByClass[clsNorm] = [];
-                }
+        // Para cada aluno que faltou HOJE, buscamos o histórico dele via count() (Economiza milhares de leituras)
+        for (const student of todayAbsences) {
+            const clsNorm = normalizeClassName(student.studentClass);
+            
+            // Query de contagem total (histórico)
+            const totalDaysSnap = await attendanceRef
+                .where("studentId", "==", student.studentId)
+                .where("date", ">=", LOCK_DATE)
+                .count()
+                .get();
+            
+            // Query de contagem de faltas (histórico)
+            const totalAbsencesSnap = await attendanceRef
+                .where("studentId", "==", student.studentId)
+                .where("date", ">=", LOCK_DATE)
+                .where("status", "==", "F")
+                .count()
+                .get();
 
-                const stats = studentStats[data.studentId];
-                const absenceRate = Math.round((stats.absences / stats.total) * 100);
+            const total = totalDaysSnap.data().count;
+            const absences = totalAbsencesSnap.data().count;
+            const absenceRate = total > 0 ? Math.round((absences / total) * 100) : 0;
 
-                absencesByClass[clsNorm].push({
-                    studentName: data.studentName,
-                    studentId: data.studentId,
-                    absenceRate: absenceRate
-                });
+            if (!absencesByClass[clsNorm]) {
+                absencesByClass[clsNorm] = [];
             }
-        });
+            absencesByClass[clsNorm].push({
+                studentName: student.studentName,
+                studentId: student.studentId,
+                absenceRate: absenceRate
+            });
+        }
 
 
         // Buscar todas as turmas cadastradas nos alunos
