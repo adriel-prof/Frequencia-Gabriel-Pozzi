@@ -241,8 +241,6 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             // 1. Relatório de Faltas (Busca Ativa)
             fetch(`/api/cron/send-report?${queryParams}`).catch(console.error);
 
-            // 2. Relatório de Porcentagem de Frequência (Indicadores)
-            fetch(`/api/cron/send-percentage-report?${queryParams}`).catch(console.error);
 
             setShowSuccessModal(true);
             setFeedback(null);

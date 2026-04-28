@@ -33,6 +33,7 @@ export async function GET(request: Request) {
 
         // 2.1 Buscar dados de HOJE primeiro (para saber quem já fez a chamada)
         const todaySnap = await attendanceRef.where("date", "==", today).get();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         todaySnap.docs.forEach((doc: any) => {
             const data = doc.data();
             const clsNorm = normalizeClassName(data.studentClass);
@@ -66,11 +67,19 @@ export async function GET(request: Request) {
             yearPresencePerClass[cls] = presenceSnap.data().count;
         }
 
-        // 3. Buscar admins para destinatários
-        const adminEmails: string[] = [];
+        const missingClasses = sortedClasses.filter(cls => !completedClassesToday.has(cls));
         const { searchParams } = new URL(request.url);
+        const isForce = searchParams.get('force') === 'true';
         const targetEmail = searchParams.get('email');
         const loggedUserEmail = searchParams.get('loggedUserEmail');
+
+        if (missingClasses.length > 0 && !isForce && !targetEmail) {
+            console.log(`E-mail de porcentagem pulado. Turmas pendentes: ${missingClasses.join(', ')}`);
+            return NextResponse.json({ message: 'Existem turmas pendentes. E-mail não enviado ainda.' }, { status: 200 });
+        }
+
+        // 3. Buscar admins para destinatários
+        const adminEmails: string[] = [];
 
         if (targetEmail) {
             adminEmails.push(targetEmail);

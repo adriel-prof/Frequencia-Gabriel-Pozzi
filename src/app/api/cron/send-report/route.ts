@@ -16,13 +16,14 @@ export async function GET(request: Request) {
         // Agrupar faltosos por turma e registrar turmas concluídas
         type AttendanceDoc = { studentClass: string; studentId: number; studentName: string; status: string; date: string; };
 
-        const absencesByClass: Record<string, { studentName: string; studentId: number; absenceRate: number }[]> = {};
+        const absencesByClass: Record<string, { studentName: string; studentId: number; presenceRate: number }[]> = {};
         const completedClassesToday = new Set<string>();
 
         const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
         
         const todayAbsences: AttendanceDoc[] = [];
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         todaySnapshot.docs.forEach((doc: any) => {
             const data = doc.data() as AttendanceDoc;
             const clsNorm = normalizeClassName(data.studentClass);
@@ -36,24 +37,25 @@ export async function GET(request: Request) {
         for (const student of todayAbsences) {
             const clsNorm = normalizeClassName(student.studentClass);
             
-            // Query de contagem total (histórico)
-            const totalDaysSnap = await attendanceRef
+            // Query apenas por studentId para evitar erro de índice composto
+            const studentAttendanceSnap = await attendanceRef
                 .where("studentId", "==", student.studentId)
-                .where("date", ">=", LOCK_DATE)
-                .count()
                 .get();
             
-            // Query de contagem de faltas (histórico)
-            const totalAbsencesSnap = await attendanceRef
-                .where("studentId", "==", student.studentId)
-                .where("date", ">=", LOCK_DATE)
-                .where("status", "==", "F")
-                .count()
-                .get();
+            let total = 0;
+            let absences = 0;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            studentAttendanceSnap.docs.forEach((d: any) => {
+                const data = d.data();
+                if (data.date >= LOCK_DATE) {
+                    total++;
+                    if (data.status === "F") {
+                        absences++;
+                    }
+                }
+            });
 
-            const total = totalDaysSnap.data().count;
-            const absences = totalAbsencesSnap.data().count;
-            const absenceRate = total > 0 ? Math.round((absences / total) * 100) : 0;
+            const presenceRate = total > 0 ? Math.round(((total - absences) / total) * 100) : 0;
 
             if (!absencesByClass[clsNorm]) {
                 absencesByClass[clsNorm] = [];
@@ -61,7 +63,7 @@ export async function GET(request: Request) {
             absencesByClass[clsNorm].push({
                 studentName: student.studentName,
                 studentId: student.studentId,
-                absenceRate: absenceRate
+                presenceRate: presenceRate
             });
         }
 
@@ -74,12 +76,19 @@ export async function GET(request: Request) {
 
         const missingClasses = allClasses.filter(cls => !completedClassesToday.has(cls));
 
-        // Buscar admins para enviar e-mail
-        const adminEmails: string[] = [];
-
         const { searchParams } = new URL(request.url);
         const targetEmail = searchParams.get('email');
         const loggedUserEmail = searchParams.get('loggedUserEmail');
+        const isForce = searchParams.get('force') === 'true';
+
+        // CONDICIONAL NOVA: Só envia se todas as chamadas acabaram OU se for forçado (ex: Cron das 09:30)
+        if (missingClasses.length > 0 && !isForce && !targetEmail) {
+            console.log(`E-mail pulado. Turmas pendentes: ${missingClasses.join(', ')}`);
+            return NextResponse.json({ message: 'Existem turmas pendentes. E-mail não enviado ainda.' }, { status: 200 });
+        }
+
+        // Buscar admins para enviar e-mail
+        const adminEmails: string[] = [];
 
         if (targetEmail) {
             // Se o usuário especificou um e-mail lá no Dashboard, manda SÓ PRA ELE (mas também inclui o logado depois)
@@ -181,12 +190,12 @@ export async function GET(request: Request) {
 
                 // Ordenar por nome
                 students.sort((a, b) => a.studentName.localeCompare(b.studentName)).forEach(student => {
-                    const isHighAbsence = student.absenceRate >= 15;
+                    const isLowPresence = student.presenceRate <= 85;
                     htmlContent += `
                         <li style="margin-bottom: 4px;">
                             ${student.studentName} 
-                            <span style="font-weight: bold; color: ${isHighAbsence ? '#b91c1c' : '#6b7280'};">
-                                (${student.absenceRate}% de faltas)
+                            <span style="font-weight: bold; color: ${isLowPresence ? '#b91c1c' : '#6b7280'};">
+                                (${student.presenceRate}% de frequência)
                             </span>
                         </li>
                     `;

@@ -1,12 +1,8 @@
 {
     "crons": [
         {
-            "path": "/api/cron/send-report",
-            "schedule": "0 13 * * 1-5"
-        },
-        {
-            "path": "/api/cron/send-percentage-report",
-            "schedule": "0 13 * * 1-5"
+            "path": "/api/cron/send-report?force=true",
+            "schedule": "30 12 * * 1-5"
         }
     ]
 }
