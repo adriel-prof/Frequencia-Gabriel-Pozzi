@@ -11,6 +11,7 @@ type AttendanceRecord = {
     studentName: string;
     studentClass: string;
     status: "P" | "F";
+    studentFirestoreId?: string;
 };
 
 function PrintAbsencesContent() {
@@ -50,7 +51,7 @@ function PrintAbsencesContent() {
                         const fetchStudentData = async () => {
                             const attendanceRef = collection(db, "attendance");
                             const studentAttendanceSnap = await getDocs(
-                                query(attendanceRef, where("studentId", "==", data.studentId))
+                                query(attendanceRef, where("studentFirestoreId", "==", data.studentFirestoreId))
                             );
                             
                             let total = 0;

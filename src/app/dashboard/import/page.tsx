@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { collection, writeBatch, doc } from "firebase/firestore";
+import { collection, writeBatch, doc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import Papa from "papaparse";
 
@@ -68,28 +68,44 @@ export default function ImportPage() {
         setFeedback(null);
 
         try {
+            // 1. Buscar alunos existentes para cruzamento por nome
+            const studentsRef = collection(db, "students");
+            const snapshot = await getDocs(studentsRef);
+            const nameToIdMap = new Map<string, string>();
+            
+            snapshot.docs.forEach(doc => {
+                const data = doc.data();
+                if (data.name) {
+                    nameToIdMap.set(String(data.name).trim().toUpperCase(), doc.id);
+                }
+            });
+
             const batch = writeBatch(db);
             let count = 0;
 
             for (const student of preview) {
-                // Remove espaços e caracteres especiais da turma para criar um prefixo na chave primaria
-                const classKey = student.class.replace(/[^a-zA-Z0-9]/g, '');
-                const docId = classKey + "_" + student.id;
+                const studentName = student.name.trim().toUpperCase();
+                let docRef;
 
-                const docRef = doc(collection(db, "students"), docId);
+                if (nameToIdMap.has(studentName)) {
+                    // ALUNO JÁ EXISTE: Vamos apenas atualizar a turma e o número (remanejamento)
+                    docRef = doc(db, "students", nameToIdMap.get(studentName)!);
+                } else {
+                    // ALUNO NOVO: Cria novo documento com ID aleatório
+                    docRef = doc(collection(db, "students"));
+                }
+
                 batch.set(docRef, {
                     id: student.id,
                     name: student.name,
                     class: student.class
-                });
+                }, { merge: true });
 
                 count++;
-
-                // Firestore limit is 500 per batch. For this demo we assume < 500 rows.
             }
 
             await batch.commit();
-            setFeedback({ type: "success", msg: `${count} estudantes salvos no banco de dados com sucesso!` });
+            setFeedback({ type: "success", msg: `${count} estudantes processados. Os alunos existentes foram remanejados e novos foram adicionados.` });
             setPreview([]);
         } catch (error) {
             console.error(error);

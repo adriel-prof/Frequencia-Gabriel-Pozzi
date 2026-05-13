@@ -215,6 +215,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     studentId: s.id,
                     studentName: s.name,
                     studentClass: normalizeClassName(s.class),
+                    studentFirestoreId: s.firestoreId,
                     date: today,
                     status: attendance[s.id],
                     teacher: user?.email,
