@@ -37,6 +37,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
         }
 
+        if (typeof window !== "undefined" && window.location.hostname === "localhost" && sessionStorage.getItem("mock_user")) {
+            try {
+                const mock = JSON.parse(sessionStorage.getItem("mock_user") || "{}");
+                setRole(mock.role);
+                setUser(mock.user);
+                setLoading(false);
+                return;
+            } catch (e) {
+                console.error("Erro ao ler mock_user:", e);
+            }
+        }
+
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             setLoading(true);
             if (currentUser && currentUser.email) {
@@ -90,6 +102,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const signIn = async () => {
         setError(null);
+        if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            const mock = {
+                user: {
+                    email: "adrielsilva@prof.educacao.sp.gov.br",
+                    displayName: "Professor Adriel (MOCK)",
+                    uid: "mock-uid-123",
+                    emailVerified: true
+                } as any,
+                role: "admin" as const
+            };
+            sessionStorage.setItem("mock_user", JSON.stringify(mock));
+            setUser(mock.user);
+            setRole(mock.role);
+            setLoading(false);
+            return;
+        }
         try {
             await signInWithPopup(auth, googleProvider);
         } catch (err: unknown) {
@@ -98,6 +126,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const logout = async () => {
+        if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            sessionStorage.removeItem("mock_user");
+            setUser(null);
+            setRole(null);
+            return;
+        }
         try {
             await signOut(auth);
             setUser(null);

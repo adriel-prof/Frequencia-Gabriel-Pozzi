@@ -34,3 +34,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Migration and administrative scripts
+/cleanup_and_migration.js
+/cleanup_log.txt
+/reconcile_1b.js
+/scripts/
+/listagem_chamada_1°B.md

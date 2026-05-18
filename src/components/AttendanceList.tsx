@@ -20,8 +20,8 @@ const LOCK_DATE = "2026-04-06";
 
 export function AttendanceList({ students, onSuccess }: { students: Student[], onSuccess?: () => void }) {
     const { user, role } = useAuth();
-    const [attendance, setAttendance] = useState<Record<number, AttendanceStatus>>({});
-    const [dispensedStudents, setDispensedStudents] = useState<Set<number>>(new Set());
+    const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
+    const [dispensedStudents, setDispensedStudents] = useState<Set<string>>(new Set());
     const [isAllowed, setIsAllowed] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
@@ -73,24 +73,40 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 );
                 const snap = await getDocs(q);
 
-                const initialAttendance: Record<number, AttendanceStatus> = {};
-                const initialDispensed = new Set<number>();
+                const initialAttendance: Record<string, AttendanceStatus> = {};
+                const initialDispensed = new Set<string>();
 
                 // 1. Mapear as presenças existentes no banco hoje
-                const existingMap: Record<number, AttendanceStatus> = {};
+                const existingMap: Record<string, AttendanceStatus> = {};
                 snap.docs.forEach(d => {
                     const data = d.data();
-                    existingMap[data.studentId] = data.status;
+                    let fId = data.studentFirestoreId;
+                    if (!fId) {
+                        // Extrai o firestoreId do ID do documento: att_${firestoreId}_${dateKey}
+                        const match = d.id.match(/^att_(.+?)_\d{8}$/);
+                        if (match) {
+                            fId = match[1];
+                        }
+                    }
+                    if (fId) {
+                        existingMap[fId] = data.status;
+                    } else {
+                        // Busca pelo studentId ou nome na lista de estudantes passada via props
+                        const found = students.find(s => s.id === data.studentId || s.name === data.studentName);
+                        if (found) {
+                            existingMap[found.firestoreId] = data.status;
+                        }
+                    }
                 });
 
                 // 2. Preencher o estado inicial
                 students.forEach((s) => {
                     if (s.dispensed) {
-                        initialAttendance[s.id] = "D";
-                        initialDispensed.add(s.id);
+                        initialAttendance[s.firestoreId] = "D";
+                        initialDispensed.add(s.firestoreId);
                     } else {
                         // Se já existir registro de hoje no banco, usa ele. Se não, padrão é "P"
-                        initialAttendance[s.id] = existingMap[s.id] || "P";
+                        initialAttendance[s.firestoreId] = existingMap[s.firestoreId] || "P";
                     }
                 });
 
@@ -127,14 +143,14 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
         return () => clearInterval(interval);
     }, [timeSettings]);
 
-    const handleStatusChange = (id: number, status: AttendanceStatus) => {
+    const handleStatusChange = (firestoreId: string, status: AttendanceStatus) => {
         if (!isAllowed) return;
-        if (dispensedStudents.has(id)) return; // Dispensado é travado
-        setAttendance((prev) => ({ ...prev, [id]: status }));
+        if (dispensedStudents.has(firestoreId)) return; // Dispensado é travado
+        setAttendance((prev) => ({ ...prev, [firestoreId]: status }));
     };
 
     const toggleDispensa = async (student: Student) => {
-        const newDispensed = !dispensedStudents.has(student.id);
+        const newDispensed = !dispensedStudents.has(student.firestoreId);
         try {
             // Persiste no Firestore
             await setDoc(doc(db, "students", student.firestoreId), { dispensed: newDispensed }, { merge: true });
@@ -142,16 +158,16 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             setDispensedStudents(prev => {
                 const next = new Set(prev);
                 if (newDispensed) {
-                    next.add(student.id);
+                    next.add(student.firestoreId);
                 } else {
-                    next.delete(student.id);
+                    next.delete(student.firestoreId);
                 }
                 return next;
             });
 
             setAttendance(prev => ({
                 ...prev,
-                [student.id]: newDispensed ? "D" : "P"
+                [student.firestoreId]: newDispensed ? "D" : "P"
             }));
         } catch (err) {
             console.error("Erro ao alterar dispensa:", err);
@@ -217,7 +233,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     studentClass: normalizeClassName(s.class),
                     studentFirestoreId: s.firestoreId,
                     date: today,
-                    status: attendance[s.id],
+                    status: attendance[s.firestoreId],
                     teacher: user?.email,
                     timestamp: serverTimestamp(),
                 });
@@ -297,7 +313,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
 
             <div className="space-y-3">
                 {students.map((student) => {
-                    const isDispensed = dispensedStudents.has(student.id);
+                    const isDispensed = dispensedStudents.has(student.firestoreId);
                     return (
                         <div key={student.firestoreId} className={`p-4 rounded-2xl shadow-sm border flex items-center justify-between gap-4 transition-all ${isDispensed ? 'bg-gray-50 border-gray-200 opacity-70' : 'bg-white border-gray-100'}`}>
                             <div className="flex-1 truncate">
@@ -337,8 +353,8 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                                     <>
                                         <button
                                             disabled={!isAllowed || isSubmitting}
-                                            onClick={() => handleStatusChange(student.id, "P")}
-                                            className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.id] === "P"
+                                            onClick={() => handleStatusChange(student.firestoreId, "P")}
+                                            className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "P"
                                                 ? "bg-green-500 text-white shadow-md shadow-green-500/30 scale-105 ring-2 ring-green-600 ring-offset-2"
                                                 : "bg-gray-100 text-gray-400 hover:bg-gray-200"
                                                 } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
@@ -347,8 +363,8 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                                         </button>
                                         <button
                                             disabled={!isAllowed || isSubmitting}
-                                            onClick={() => handleStatusChange(student.id, "F")}
-                                            className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.id] === "F"
+                                            onClick={() => handleStatusChange(student.firestoreId, "F")}
+                                            className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "F"
                                                 ? "bg-red-500 text-white shadow-md shadow-red-500/30 scale-105 ring-2 ring-red-600 ring-offset-2"
                                                 : "bg-gray-100 text-gray-400 hover:bg-gray-200"
                                                 } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
