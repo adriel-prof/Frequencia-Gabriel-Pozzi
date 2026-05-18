@@ -11,8 +11,16 @@ type AttendanceRecord = {
     studentName: string;
     studentClass: string;
     date: string;
-    status: "P" | "F";
+    status: "P" | "F" | "D" | "A";
     teacher: string;
+    studentFirestoreId?: string;
+};
+
+type Student = {
+    firestoreId: string;
+    name: string;
+    class: string;
+    id: number;
 };
 
 const LOCK_DATE = "2026-04-06";
@@ -21,21 +29,29 @@ const LOCK_DATE = "2026-04-06";
 export default function DashboardPage() {
 
     const [records, setRecords] = useState<AttendanceRecord[]>([]);
+    const [students, setStudents] = useState<Student[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filterDate, setFilterDate] = useState(new Date().toISOString().split("T")[0]);
 
     const [selectedClass, setSelectedClass] = useState<string | null>(null);
     const [allClasses, setAllClasses] = useState<string[]>([]);
 
-    // OTIMIZAÇÃO: Busca a lista de turmas apenas uma vez ao carregar o dashboard
+    // OTIMIZAÇÃO: Busca a lista de turmas e alunos apenas uma vez ao carregar o dashboard
     useEffect(() => {
         async function fetchClasses() {
             try {
                 const studentsSnap = await getDocs(collection(db, "students"));
-                const uniqueClasses = Array.from(new Set(studentsSnap.docs.map(d => d.data().class as string))).sort();
+                const studentsList = studentsSnap.docs.map(doc => ({
+                    firestoreId: doc.id,
+                    name: doc.data().name as string,
+                    class: doc.data().class as string,
+                    id: Number(doc.data().id)
+                }));
+                setStudents(studentsList);
+                const uniqueClasses = Array.from(new Set(studentsList.map(s => s.class as string))).sort();
                 setAllClasses(uniqueClasses);
             } catch (err) {
-                console.error("Erro ao buscar turmas:", err);
+                console.error("Erro ao buscar turmas e alunos:", err);
             }
         }
         fetchClasses();
@@ -192,8 +208,24 @@ export default function DashboardPage() {
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                             {classes.sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true, sensitivity: 'base' })).map(cls => {
                                 const classRecords = filteredRecords.filter(r => normalizeClassName(r.studentClass) === cls);
-                                const totalPresences = classRecords.filter(r => r.status === "P").length;
-                                const totalAbsences = classRecords.filter(r => r.status === "F").length;
+                                const classStudents = students.filter(s => normalizeClassName(s.class) === cls);
+
+                                let totalPresences = 0;
+                                let totalAbsences = 0;
+
+                                classStudents.forEach(s => {
+                                    const record = classRecords.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
+                                    if (record) {
+                                        if (record.status === "P" || record.status === "A") {
+                                            totalPresences++;
+                                        } else if (record.status === "F") {
+                                            totalAbsences++;
+                                        }
+                                    } else {
+                                        totalPresences++;
+                                    }
+                                });
+
                                 const percentage = totalPresences + totalAbsences > 0
                                     ? Math.round((totalPresences / (totalPresences + totalAbsences)) * 100)
                                     : 0;
@@ -244,8 +276,23 @@ export default function DashboardPage() {
             {(() => {
                 const cls = selectedClass;
                 const classRecords = filteredRecords.filter(r => normalizeClassName(r.studentClass) === cls);
-                const totalPresences = classRecords.filter(r => r.status === "P").length;
-                const totalAbsences = classRecords.filter(r => r.status === "F").length;
+                const classStudents = students.filter(s => normalizeClassName(s.class) === cls);
+
+                let totalPresences = 0;
+                let totalAbsences = 0;
+
+                classStudents.forEach(s => {
+                    const record = classRecords.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
+                    if (record) {
+                        if (record.status === "P" || record.status === "A") {
+                            totalPresences++;
+                        } else if (record.status === "F") {
+                            totalAbsences++;
+                        }
+                    } else {
+                        totalPresences++;
+                    }
+                });
 
                 return (
                     <div key={cls} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -255,7 +302,7 @@ export default function DashboardPage() {
                                 <span className="text-green-600">Presentes: {totalPresences}</span>
                                 <span className="text-red-600">Faltas: {totalAbsences}</span>
                                 <button
-                                    onClick={() => handleDeleteClassReport(cls, classRecords)}
+                                    onClick={() => handleDeleteClassReport(cls!, classRecords)}
                                     className="ml-4 text-xs font-bold text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"
                                 >
                                     Excluir Relatório
@@ -274,18 +321,29 @@ export default function DashboardPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
-                                    {classRecords.map(record => (
-                                        <tr key={record.id} className="hover:bg-gray-50/50">
-                                            <td className="px-6 py-3 text-gray-500">{record.studentId}</td>
-                                            <td className="px-6 py-3 font-medium text-gray-900">{record.studentName}</td>
-                                            <td className="px-6 py-3">
-                                                <span className={`inline-flex items-center justify-center w-6 h-6 rounded-md font-bold text-xs ${record.status === "P" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                                                    {record.status}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-3 text-gray-500">{record.teacher}</td>
-                                        </tr>
-                                    ))}
+                                    {classStudents.sort((a, b) => a.id - b.id).map(student => {
+                                        const record = classRecords.find(r => r.studentFirestoreId === student.firestoreId || r.studentName === student.name);
+                                        const status = record ? record.status : "P";
+                                        const teacher = record ? record.teacher : "Sistema (Padrão)";
+
+                                        return (
+                                            <tr key={student.firestoreId} className="hover:bg-gray-50/50">
+                                                <td className="px-6 py-3 text-gray-500">{student.id}</td>
+                                                <td className="px-6 py-3 font-medium text-gray-900">{student.name}</td>
+                                                <td className="px-6 py-3">
+                                                    <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md font-bold text-xs ${
+                                                        status === "P" ? "bg-green-100 text-green-700" :
+                                                        status === "F" ? "bg-red-100 text-red-700" :
+                                                        status === "A" ? "bg-amber-100 text-amber-700" :
+                                                        "bg-blue-100 text-blue-700" // "D"
+                                                    }`}>
+                                                        {status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-3 text-gray-500">{teacher}</td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>

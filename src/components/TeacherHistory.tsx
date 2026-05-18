@@ -10,7 +10,7 @@ type AttendanceRecord = {
     studentName: string;
     studentClass: string;
     date: string;
-    status: "P" | "F" | "D";
+    status: "P" | "F" | "D" | "A";
     teacher: string;
 };
 
@@ -89,9 +89,10 @@ export function TeacherHistory() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {classes.sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true, sensitivity: 'base' })).map(cls => {
                             const classRecords = filteredRecords.filter(r => normalizeClassName(r.studentClass) === cls);
-                            const totalPresences = classRecords.filter(r => r.status === "P").length;
+                            const totalPresences = classRecords.filter(r => r.status === "P" || r.status === "A").length;
                             const totalAbsences = classRecords.filter(r => r.status === "F").length;
                             const totalDispensed = classRecords.filter(r => r.status === "D").length;
+                            const totalLates = classRecords.filter(r => r.status === "A").length;
                             const teacher = classRecords[0]?.teacher || "Desconhecido";
 
                             return (
@@ -114,7 +115,8 @@ export function TeacherHistory() {
                                     <div className="w-full flex gap-3 text-sm font-medium border-t border-gray-100 pt-3 mt-1">
                                         <span className="text-green-600 font-bold">{totalPresences} P</span>
                                         <span className="text-red-600 font-bold">{totalAbsences} F</span>
-                                        {totalDispensed > 0 && <span className="text-amber-600 font-bold">{totalDispensed} D</span>}
+                                        {totalLates > 0 && <span className="text-amber-600 font-bold">{totalLates} A</span>}
+                                        {totalDispensed > 0 && <span className="text-blue-600 font-bold">{totalDispensed} D</span>}
                                     </div>
                                 </button>
                             );
@@ -155,10 +157,11 @@ export function TeacherHistory() {
                                             <td className="px-6 py-3 text-gray-500">{record.studentId}</td>
                                             <td className="px-6 py-3 font-medium text-gray-900">{record.studentName}</td>
                                             <td className="px-6 py-3">
-                                                <span className={`inline-flex items-center justify-center w-6 h-6 rounded-md font-bold text-xs ${
+                                                <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md font-bold text-xs ${
                                                     record.status === "P" ? "bg-green-100 text-green-700" : 
                                                     record.status === "F" ? "bg-red-100 text-red-700" :
-                                                    "bg-amber-100 text-amber-700"
+                                                    record.status === "A" ? "bg-amber-100 text-amber-700" :
+                                                    "bg-blue-100 text-blue-700"
                                                 }`}>
                                                     {record.status}
                                                 </span>

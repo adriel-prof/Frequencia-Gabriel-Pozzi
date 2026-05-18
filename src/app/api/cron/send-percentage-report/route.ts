@@ -38,7 +38,7 @@ export async function GET(request: Request) {
             const data = doc.data();
             const clsNorm = normalizeClassName(data.studentClass);
             completedClassesToday.add(clsNorm);
-            if (data.status === "P" || data.status === "D") {
+            if (data.status === "P" || data.status === "D" || data.status === "A") {
                 todayPresentPerClass[clsNorm] = (todayPresentPerClass[clsNorm] || 0) + 1;
             }
         });
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
             const presenceSnap = await attendanceRef
                 .where("studentClass", "==", cls)
                 .where("date", ">=", LOCK_DATE)
-                .where("status", "in", ["P", "D"])
+                .where("status", "in", ["P", "D", "A"])
                 .count()
                 .get();
 

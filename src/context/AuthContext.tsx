@@ -109,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     displayName: "Professor Adriel (MOCK)",
                     uid: "mock-uid-123",
                     emailVerified: true
-                } as any,
+                } as unknown as User,
                 role: "admin" as const
             };
             sessionStorage.setItem("mock_user", JSON.stringify(mock));

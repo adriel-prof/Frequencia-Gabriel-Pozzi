@@ -16,8 +16,10 @@ export async function GET() {
         let attendanceMoved = 0;
 
         // 1. Mapear presenças por ID de estudante (extraído do docId att_ID_DATA)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const attendanceByStudentId = new Map<string, any[]>();
-        attendanceSnap.docs.forEach(doc => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        attendanceSnap.docs.forEach((doc: any) => {
             const parts = doc.id.split('_');
             if (parts.length >= 3) {
                 const studentId = parts[1];

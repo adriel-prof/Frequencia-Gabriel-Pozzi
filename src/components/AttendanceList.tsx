@@ -13,7 +13,7 @@ type Student = {
     dispensed?: boolean;
 };
 
-type AttendanceStatus = "P" | "F" | "D";
+type AttendanceStatus = "P" | "F" | "D" | "A";
 
 const LOCK_DATE = "2026-04-06";
 
@@ -145,7 +145,6 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
 
     const handleStatusChange = (firestoreId: string, status: AttendanceStatus) => {
         if (!isAllowed) return;
-        if (dispensedStudents.has(firestoreId)) return; // Dispensado é travado
         setAttendance((prev) => ({ ...prev, [firestoreId]: status }));
     };
 
@@ -345,33 +344,47 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                             </div>
 
                             <div className="flex gap-2">
-                                {isDispensed ? (
-                                    <div className="w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg bg-amber-100 text-amber-600 ring-2 ring-amber-300 ring-offset-2">
+                                <button
+                                    disabled={!isAllowed || isSubmitting}
+                                    onClick={() => handleStatusChange(student.firestoreId, "P")}
+                                    className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "P"
+                                        ? "bg-green-500 text-white shadow-md shadow-green-500/30 scale-105 ring-2 ring-green-600 ring-offset-2"
+                                        : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                        } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
+                                >
+                                    P
+                                </button>
+                                <button
+                                    disabled={!isAllowed || isSubmitting}
+                                    onClick={() => handleStatusChange(student.firestoreId, "F")}
+                                    className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "F"
+                                        ? "bg-red-500 text-white shadow-md shadow-red-500/30 scale-105 ring-2 ring-red-600 ring-offset-2"
+                                        : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                        } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
+                                >
+                                    F
+                                </button>
+                                <button
+                                    disabled={!isAllowed || isSubmitting}
+                                    onClick={() => handleStatusChange(student.firestoreId, "A")}
+                                    className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "A"
+                                        ? "bg-amber-500 text-white shadow-md shadow-amber-500/30 scale-105 ring-2 ring-amber-600 ring-offset-2"
+                                        : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                        } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
+                                >
+                                    A
+                                </button>
+                                {isDispensed && (
+                                    <button
+                                        disabled={!isAllowed || isSubmitting}
+                                        onClick={() => handleStatusChange(student.firestoreId, "D")}
+                                        className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "D"
+                                            ? "bg-blue-500 text-white shadow-md shadow-blue-500/30 scale-105 ring-2 ring-blue-600 ring-offset-2"
+                                            : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                            } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
+                                    >
                                         D
-                                    </div>
-                                ) : (
-                                    <>
-                                        <button
-                                            disabled={!isAllowed || isSubmitting}
-                                            onClick={() => handleStatusChange(student.firestoreId, "P")}
-                                            className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "P"
-                                                ? "bg-green-500 text-white shadow-md shadow-green-500/30 scale-105 ring-2 ring-green-600 ring-offset-2"
-                                                : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                                                } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
-                                        >
-                                            P
-                                        </button>
-                                        <button
-                                            disabled={!isAllowed || isSubmitting}
-                                            onClick={() => handleStatusChange(student.firestoreId, "F")}
-                                            className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "F"
-                                                ? "bg-red-500 text-white shadow-md shadow-red-500/30 scale-105 ring-2 ring-red-600 ring-offset-2"
-                                                : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                                                } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
-                                        >
-                                            F
-                                        </button>
-                                    </>
+                                    </button>
                                 )}
                             </div>
                         </div>

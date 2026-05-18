@@ -8,7 +8,9 @@ import { Suspense } from "react";
 
 type AttendanceRecord = {
     studentClass: string;
-    status: "P" | "F";
+    status: "P" | "F" | "D" | "A";
+    studentName: string;
+    studentFirestoreId?: string;
 };
 
 function PrintContent() {
@@ -22,22 +24,44 @@ function PrintContent() {
 
         async function fetchData() {
             try {
+                // Busca alunos atuais
+                const studentsSnap = await getDocs(collection(db, "students"));
+                const studentsList = studentsSnap.docs.map(doc => ({
+                    firestoreId: doc.id,
+                    name: doc.data().name as string,
+                    class: doc.data().class as string
+                }));
+
+                // Busca registros de chamada
                 const q = query(collection(db, "attendance"), where("date", "==", date));
                 const snapshot = await getDocs(q);
+                const recordsData = snapshot.docs.map(doc => doc.data() as AttendanceRecord);
 
                 const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
                 const stats: Record<string, { p: number; f: number }> = {};
-                snapshot.docs.forEach(doc => {
-                    const data = doc.data() as AttendanceRecord;
-                    const clsNorm = normalizeClassName(data.studentClass);
-                    if (!stats[clsNorm]) {
-                        stats[clsNorm] = { p: 0, f: 0 };
-                    }
-                    if (data.status === "P") {
-                        stats[clsNorm].p += 1;
-                    } else if (data.status === "F") {
-                        stats[clsNorm].f += 1;
-                    }
+                
+                // Apenas turmas que possuem alguma chamada lançada no dia entram no placar impresso
+                const activeClasses = Array.from(new Set(recordsData.map(r => normalizeClassName(r.studentClass))));
+
+                activeClasses.forEach(clsNorm => {
+                    stats[clsNorm] = { p: 0, f: 0 };
+                    
+                    // Alunos atuais da turma no banco
+                    const classStudents = studentsList.filter(s => normalizeClassName(s.class) === clsNorm);
+                    
+                    classStudents.forEach(s => {
+                        const record = recordsData.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
+                        if (record) {
+                            if (record.status === "P" || record.status === "A") {
+                                stats[clsNorm].p += 1;
+                            } else if (record.status === "F") {
+                                stats[clsNorm].f += 1;
+                            }
+                        } else {
+                            // Aluno incluído recentemente sem registro no dia conta como presente
+                            stats[clsNorm].p += 1;
+                        }
+                    });
                 });
 
                 const result = Object.keys(stats).map(cls => {
