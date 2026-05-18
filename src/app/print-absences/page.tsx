@@ -49,7 +49,10 @@ function PrintAbsencesContent() {
                             
                             // Busca histórico deste aluno no banco mock
                             const studentRecords = (mockDb.getAttendance() as unknown as (AttendanceRecord & { date: string })[])
-                                .filter(r => r.studentFirestoreId === data.studentFirestoreId);
+                                .filter(r => data.studentFirestoreId 
+                                    ? r.studentFirestoreId === data.studentFirestoreId 
+                                    : r.studentId === data.studentId
+                                );
                                 
                             let total = 0;
                             let totalAbsences = 0;
@@ -108,9 +111,10 @@ function PrintAbsencesContent() {
                         
                         const fetchStudentData = async () => {
                             const attendanceRef = collection(db, "attendance");
-                            const studentAttendanceSnap = await getDocs(
-                                query(attendanceRef, where("studentFirestoreId", "==", data.studentFirestoreId))
-                            );
+                            const qStudent = data.studentFirestoreId
+                                ? query(attendanceRef, where("studentFirestoreId", "==", data.studentFirestoreId))
+                                : query(attendanceRef, where("studentId", "==", data.studentId));
+                            const studentAttendanceSnap = await getDocs(qStudent);
                             
                             let total = 0;
                             let totalAbsences = 0;

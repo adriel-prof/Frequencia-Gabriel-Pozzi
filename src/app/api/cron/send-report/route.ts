@@ -14,7 +14,7 @@ export async function GET(request: Request) {
         const todaySnapshot = await attendanceRef.where("date", "==", today).get();
 
         // Agrupar faltosos por turma e registrar turmas concluídas
-        type AttendanceDoc = { studentClass: string; studentId: number; studentName: string; status: string; date: string; studentFirestoreId: string; };
+        type AttendanceDoc = { studentClass: string; studentId: number; studentName: string; status: string; date: string; studentFirestoreId?: string; };
 
         const absencesByClass: Record<string, { studentName: string; studentId: number; presenceRate: number }[]> = {};
         const completedClassesToday = new Set<string>();
@@ -37,10 +37,10 @@ export async function GET(request: Request) {
         for (const student of todayAbsences) {
             const clsNorm = normalizeClassName(student.studentClass);
             
-            // Query apenas por studentFirestoreId para evitar erro de índice composto
-            const studentAttendanceSnap = await attendanceRef
-                .where("studentFirestoreId", "==", student.studentFirestoreId)
-                .get();
+            // Query apenas por studentFirestoreId para evitar erro de índice composto, com fallback para studentId
+            const studentAttendanceSnap = student.studentFirestoreId
+                ? await attendanceRef.where("studentFirestoreId", "==", student.studentFirestoreId).get()
+                : await attendanceRef.where("studentId", "==", student.studentId).get();
             
             let total = 0;
             let absences = 0;
