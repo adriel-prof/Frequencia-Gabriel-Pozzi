@@ -27,6 +27,13 @@ export function TeacherHistory() {
         async function fetchRecords() {
             setIsLoading(true);
             try {
+                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                    const { mockDb } = await import("@/lib/mockDatabase");
+                    const data = mockDb.getAttendance(filterDate) as unknown as AttendanceRecord[];
+                    setRecords(data);
+                    setIsLoading(false);
+                    return;
+                }
                 // OTIMIZAÇÃO: Filtra por data no servidor para evitar carregar todo o histórico
                 const q = query(
                     collection(db, "attendance"), 

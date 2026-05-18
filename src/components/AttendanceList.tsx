@@ -42,6 +42,13 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     useEffect(() => {
         async function fetchSettings() {
             try {
+                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                    setTimeSettings({
+                        start: "00:00", // Permite chamadas a qualquer hora no localhost
+                        end: "23:59"
+                    });
+                    return;
+                }
                 const snap = await getDoc(doc(db, "settings", "attendance"));
                 if (snap.exists()) {
                     const data = snap.data();
@@ -66,6 +73,40 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             }
             try {
                 const today = new Date().toISOString().split("T")[0];
+
+                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                    const { mockDb } = await import("@/lib/mockDatabase");
+                    const localRecords = mockDb.getAttendance(today);
+                    const localDispensed = mockDb.getDispensedStudents();
+                    
+                    const initialAttendance: Record<string, AttendanceStatus> = {};
+                    const initialDispensed = new Set<string>();
+                    
+                    const existingMap: Record<string, AttendanceStatus> = {};
+                    localRecords.forEach(r => {
+                        if (normalizeClassName(r.studentClass) === normalizeClassName(students[0].class)) {
+                            existingMap[r.studentFirestoreId] = r.status;
+                        }
+                    });
+                    
+                    students.forEach((s) => {
+                        const isDispensed = localDispensed.has(s.firestoreId);
+                        if (isDispensed) {
+                            initialAttendance[s.firestoreId] = existingMap[s.firestoreId] || "D";
+                            initialDispensed.add(s.firestoreId);
+                        } else {
+                            initialAttendance[s.firestoreId] = existingMap[s.firestoreId] || "P";
+                        }
+                    });
+                    
+                    setAttendance(initialAttendance);
+                    setDispensedStudents(initialDispensed);
+                    if (Object.keys(existingMap).length > 0) {
+                        setIsUpdateMode(true);
+                    }
+                    return;
+                }
+
                 const q = query(
                     collection(db, "attendance"),
                     where("date", "==", today),
@@ -151,6 +192,29 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     const toggleDispensa = async (student: Student) => {
         const newDispensed = !dispensedStudents.has(student.firestoreId);
         try {
+            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                const { mockDb } = await import("@/lib/mockDatabase");
+                if (newDispensed) {
+                    mockDb.addDispensation(student.firestoreId);
+                } else {
+                    mockDb.removeDispensation(student.firestoreId);
+                }
+                setDispensedStudents(prev => {
+                    const next = new Set(prev);
+                    if (newDispensed) {
+                        next.add(student.firestoreId);
+                    } else {
+                        next.delete(student.firestoreId);
+                    }
+                    return next;
+                });
+                setAttendance(prev => ({
+                    ...prev,
+                    [student.firestoreId]: newDispensed ? "D" : "P"
+                }));
+                return;
+            }
+
             // Persiste no Firestore
             await setDoc(doc(db, "students", student.firestoreId), { dispensed: newDispensed }, { merge: true });
 
@@ -178,6 +242,13 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
         if (!deleteCandidate) return;
         setIsDeletingStudent(true);
         try {
+            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                const { mockDb } = await import("@/lib/mockDatabase");
+                mockDb.deleteStudent(deleteCandidate.id);
+                window.location.reload();
+                return;
+            }
+
             await deleteDoc(doc(db, "students", deleteCandidate.id));
             window.location.reload(); // Vai recarregar a tela para puxar dados atualizados do banco
         } catch (err) {
@@ -194,6 +265,18 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
         setIsAddingStudent(true);
         try {
             const studentClass = students[0]?.class || "Nova Turma";
+
+            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                const { mockDb } = await import("@/lib/mockDatabase");
+                mockDb.saveStudent({
+                    id: Number(newStudentId),
+                    name: newStudentName.trim().toUpperCase(),
+                    class: studentClass
+                });
+                window.location.reload();
+                return;
+            }
+
             await addDoc(collection(db, "students"), {
                 id: Number(newStudentId),
                 name: newStudentName.trim().toUpperCase(),
@@ -217,8 +300,26 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
         setFeedback(null);
 
         try {
-            const batch = writeBatch(db);
             const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+            
+            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                const { mockDb } = await import("@/lib/mockDatabase");
+                const batchRecords = students.map(s => ({
+                    studentId: s.id,
+                    studentName: s.name,
+                    studentClass: normalizeClassName(s.class),
+                    studentFirestoreId: s.firestoreId,
+                    date: today,
+                    status: attendance[s.firestoreId],
+                    teacher: user?.email || "adrielsilva@prof.educacao.sp.gov.br"
+                }));
+                mockDb.saveAttendanceBatch(batchRecords);
+                setShowSuccessModal(true);
+                setFeedback(null);
+                return;
+            }
+
+            const batch = writeBatch(db);
             const dateKey = today.replace(/-/g, ""); // YYYYMMDD
 
             students.forEach((s) => {

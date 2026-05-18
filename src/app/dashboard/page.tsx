@@ -40,6 +40,14 @@ export default function DashboardPage() {
     useEffect(() => {
         async function fetchClasses() {
             try {
+                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                    const { mockDb } = await import("@/lib/mockDatabase");
+                    const studentsList = mockDb.getStudents();
+                    setStudents(studentsList);
+                    const uniqueClasses = Array.from(new Set(studentsList.map(s => s.class as string))).sort();
+                    setAllClasses(uniqueClasses);
+                    return;
+                }
                 const studentsSnap = await getDocs(collection(db, "students"));
                 const studentsList = studentsSnap.docs.map(doc => ({
                     firestoreId: doc.id,
@@ -61,6 +69,13 @@ export default function DashboardPage() {
         async function fetchRecords() {
             setIsLoading(true);
             try {
+                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                    const { mockDb } = await import("@/lib/mockDatabase");
+                    const data = mockDb.getAttendance(filterDate) as unknown as AttendanceRecord[];
+                    setRecords(data);
+                    setIsLoading(false);
+                    return;
+                }
                 // OTIMIZAÇÃO: Busca apenas registros da data selecionada no servidor
                 const q = query(
                     collection(db, "attendance"),
@@ -101,6 +116,18 @@ export default function DashboardPage() {
         if (!confirm(`Tem certeza que deseja excluir DEFNITIVAMENTE o relatório da Turma ${cls} na data selecionada?`)) return;
 
         try {
+            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                const { mockDb } = await import("@/lib/mockDatabase");
+                const allMockAttendance = mockDb.getAttendance();
+                const dateRecordsIds = new Set(classRecords.map(r => r.id));
+                const remaining = allMockAttendance.filter(r => !dateRecordsIds.has(r.id));
+                localStorage.setItem("mock_attendance", JSON.stringify(remaining));
+                
+                setRecords(prev => prev.filter(r => !classRecords.find(cr => cr.id === r.id)));
+                alert("Relatório excluído com sucesso (Simulação Local)!");
+                return;
+            }
+
             const batch = writeBatch(db);
             classRecords.forEach(record => {
                 const docRef = doc(db, "attendance", record.id);

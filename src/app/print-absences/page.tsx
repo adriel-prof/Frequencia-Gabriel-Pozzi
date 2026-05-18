@@ -27,6 +27,64 @@ function PrintAbsencesContent() {
 
         async function fetchData() {
             try {
+                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                    const { mockDb } = await import("@/lib/mockDatabase");
+                    
+                    const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
+                    
+                    const recordsData = mockDb.getAttendance(date || undefined) as unknown as AttendanceRecord[];
+                    const completedClassesToday = new Set<string>();
+                    const LOCK_DATE = "2026-04-06";
+                    
+                    const absences: Record<string, { name: string; id: number; presenceRate: number }[]> = {};
+                    
+                    recordsData.forEach(data => {
+                        const clsNorm = normalizeClassName(data.studentClass);
+                        completedClassesToday.add(clsNorm);
+                        
+                        if (data.status === "F") {
+                            if (!absences[clsNorm]) {
+                                absences[clsNorm] = [];
+                            }
+                            
+                            // Busca histórico deste aluno no banco mock
+                            const studentRecords = (mockDb.getAttendance() as unknown as (AttendanceRecord & { date: string })[])
+                                .filter(r => r.studentFirestoreId === data.studentFirestoreId);
+                                
+                            let total = 0;
+                            let totalAbsences = 0;
+                            
+                            studentRecords.forEach(rec => {
+                                if (rec.date >= LOCK_DATE) {
+                                    total++;
+                                    if (rec.status === "F") {
+                                        totalAbsences++;
+                                    }
+                                }
+                            });
+                            
+                            const presenceRate = total > 0 ? Math.round(((total - totalAbsences) / total) * 100) : 0;
+                            absences[clsNorm].push({ name: data.studentName, id: data.studentId, presenceRate });
+                        }
+                    });
+                    
+                    // Ordena
+                    Object.keys(absences).forEach(cls => {
+                        absences[cls].sort((a, b) => a.name.localeCompare(b.name));
+                    });
+                    
+                    const studentsList = mockDb.getStudents();
+                    const allClasses = Array.from(new Set(studentsList.map(s => normalizeClassName(s.class))));
+                    const missing = allClasses
+                        .filter(cls => !completedClassesToday.has(cls))
+                        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+                        
+                    setAbsencesByClass(absences);
+                    setMissingClasses(missing);
+                    setLoading(false);
+                    return;
+                }
+
                 // Fetch attendance records for the date
                 const q = query(collection(db, "attendance"), where("date", "==", date));
                 const snapshot = await getDocs(q);

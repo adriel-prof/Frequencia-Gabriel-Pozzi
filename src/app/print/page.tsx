@@ -24,6 +24,44 @@ function PrintContent() {
 
         async function fetchData() {
             try {
+                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                    const { mockDb } = await import("@/lib/mockDatabase");
+                    const studentsList = mockDb.getStudents();
+                    const recordsData = mockDb.getAttendance(date || undefined) as unknown as AttendanceRecord[];
+                    
+                    const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
+                    const stats: Record<string, { p: number; f: number }> = {};
+                    const activeClasses = Array.from(new Set(recordsData.map(r => normalizeClassName(r.studentClass))));
+
+                    activeClasses.forEach(clsNorm => {
+                        stats[clsNorm] = { p: 0, f: 0 };
+                        const classStudents = studentsList.filter(s => normalizeClassName(s.class) === clsNorm);
+                        classStudents.forEach(s => {
+                            const record = recordsData.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
+                            if (record) {
+                                if (record.status === "P" || record.status === "A") {
+                                    stats[clsNorm].p += 1;
+                                } else if (record.status === "F") {
+                                    stats[clsNorm].f += 1;
+                                }
+                            } else {
+                                stats[clsNorm].p += 1;
+                            }
+                        });
+                    });
+
+                    const result = Object.keys(stats).map(cls => {
+                        const total = stats[cls].p + stats[cls].f;
+                        const percentage = total === 0 ? 0 : Math.round((stats[cls].p / total) * 100);
+                        return { className: cls, percentage };
+                    });
+
+                    result.sort((a, b) => a.className.localeCompare(b.className, undefined, { numeric: true, sensitivity: 'base' }));
+                    setClassData(result);
+                    setLoading(false);
+                    return;
+                }
+
                 // Busca alunos atuais
                 const studentsSnap = await getDocs(collection(db, "students"));
                 const studentsList = studentsSnap.docs.map(doc => ({

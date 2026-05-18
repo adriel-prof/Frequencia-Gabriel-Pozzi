@@ -22,6 +22,20 @@ export default function UsersPage() {
 
     const fetchUsers = async () => {
         try {
+            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                const localRoles = localStorage.getItem("mock_roles");
+                if (localRoles) {
+                    setUsers(JSON.parse(localRoles));
+                } else {
+                    const defaultRoles = [
+                        { email: "adrielsilva@prof.educacao.sp.gov.br", role: "admin", name: "Professor Adriel (MOCK)" }
+                    ] as RoleDoc[];
+                    localStorage.setItem("mock_roles", JSON.stringify(defaultRoles));
+                    setUsers(defaultRoles);
+                }
+                setIsLoading(false);
+                return;
+            }
             const snapshot = await getDocs(collection(db, "roles"));
             const data = snapshot.docs.map(d => ({ email: d.id, ...d.data() } as RoleDoc));
             setUsers(data);
@@ -36,6 +50,12 @@ export default function UsersPage() {
 
     const handleRoleChange = async (email: string, newRole: "admin" | "teacher") => {
         try {
+            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                const updated = users.map(u => u.email === email ? { ...u, role: newRole } : u);
+                localStorage.setItem("mock_roles", JSON.stringify(updated));
+                setUsers(updated);
+                return;
+            }
             const docRef = doc(db, "roles", email);
             await setDoc(docRef, { role: newRole }, { merge: true });
             setUsers(prev => prev.map(u => u.email === email ? { ...u, role: newRole } : u));
@@ -49,6 +69,13 @@ export default function UsersPage() {
         if (!deleteCandidate) return;
         setIsDeleting(true);
         try {
+            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                const updated = users.filter(u => u.email !== deleteCandidate.email);
+                localStorage.setItem("mock_roles", JSON.stringify(updated));
+                setUsers(updated);
+                setDeleteCandidate(null);
+                return;
+            }
             await deleteDoc(doc(db, "roles", deleteCandidate.email));
             setUsers(prev => prev.filter(u => u.email !== deleteCandidate.email));
             setDeleteCandidate(null);

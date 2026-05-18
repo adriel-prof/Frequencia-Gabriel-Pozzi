@@ -36,6 +36,13 @@ export default function ChamadaPage() {
         async function fetchStudents() {
             if (!user) return;
             try {
+                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                    const { mockDb } = await import("@/lib/mockDatabase");
+                    const fetchedStudents = mockDb.getStudents();
+                    setStudents(fetchedStudents);
+                    setIsLoading(false);
+                    return;
+                }
                 const q = query(collection(db, "students"), orderBy("id", "asc"));
                 const snapshot = await getDocs(q);
                 const fetchedStudents = snapshot.docs.map(docSnap => ({
@@ -59,6 +66,19 @@ export default function ChamadaPage() {
         if (!newClassName || newClassName.trim() === oldClassName || newClassName.trim() === "") return;
 
         try {
+            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                const { mockDb } = await import("@/lib/mockDatabase");
+                const students = mockDb.getStudents();
+                students.forEach(s => {
+                    if (s.class === oldClassName) {
+                        mockDb.saveStudent({ ...s, class: newClassName.trim() });
+                    }
+                });
+                setStudents(prev => prev.map(s => s.class === oldClassName ? { ...s, class: newClassName.trim() } : s));
+                alert("Nome da turma atualizado com sucesso (Simulação Local)!");
+                return;
+            }
+
             const batch = writeBatch(db);
             const q = query(collection(db, "students"), where("class", "==", oldClassName));
             const snapshot = await getDocs(q);
