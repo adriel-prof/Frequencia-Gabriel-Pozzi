@@ -52,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             setLoading(true);
             if (currentUser && currentUser.email) {
-                if (currentUser.email.endsWith("@prof.educacao.sp.gov.br")) {
+                if (currentUser.email.endsWith("@prof.educacao.sp.gov.br") || currentUser.email.endsWith("@servidor.educacao.sp.gov.br")) {
                     try {
                         const roleDocRef = doc(db, "roles", currentUser.email);
                         const roleDoc = await getDoc(roleDocRef);
@@ -88,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     await signOut(auth);
                     setUser(null);
                     setRole(null);
-                    setError("Acesso negado. Utilize um e-mail institucional @prof.educacao.sp.gov.br");
+                    setError("Acesso negado. Utilize um e-mail institucional @prof.educacao.sp.gov.br ou @servidor.educacao.sp.gov.br");
                 }
             } else {
                 setUser(null);

@@ -86,7 +86,7 @@ export default function LoginPage() {
                 </div>
                 <div className="bg-gray-50 border-t border-gray-100 p-4 text-center">
                     <p className="text-xs text-gray-400">
-                        Utilize seu e-mail institucional @prof.educacao.sp.gov.br
+                        Utilize seu e-mail institucional @prof.educacao.sp.gov.br ou @servidor.educacao.sp.gov.br
                     </p>
                 </div>
             </div>
