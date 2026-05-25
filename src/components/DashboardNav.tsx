@@ -7,6 +7,7 @@ export function DashboardNav() {
     const tabs = [
         { name: "Relatórios", href: "/dashboard" },
         { name: "Professores & Adms", href: "/dashboard/users" },
+        { name: "Transferir Alunos", href: "/dashboard/students" },
         { name: "Importar Turmas", href: "/dashboard/import" },
         { name: "Configurações", href: "/dashboard/settings" }
     ];

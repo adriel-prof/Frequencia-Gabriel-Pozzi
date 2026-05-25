@@ -36,7 +36,114 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     const [newStudentName, setNewStudentName] = useState("");
     const [isAddingStudent, setIsAddingStudent] = useState(false);
 
+    // States for Transfer Modal
+    const [transferCandidate, setTransferCandidate] = useState<Student | null>(null);
+    const [transferTargetClass, setTransferTargetClass] = useState("");
+    const [isTransferNewClass, setIsTransferNewClass] = useState(false);
+    const [transferCustomClass, setTransferCustomClass] = useState("");
+    const [transferNewNumber, setTransferNewNumber] = useState<number>(1);
+    const [isTransferSaving, setIsTransferSaving] = useState(false);
+    const [allStudentsList, setAllStudentsList] = useState<Student[]>([]);
+
     const [timeSettings, setTimeSettings] = useState({ start: "08:40", end: "23:59" });
+
+    // Fetch all students to support transfer/remanejamento suggestions
+    useEffect(() => {
+        if (role !== "admin") return;
+        async function fetchAllStudents() {
+            try {
+                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                    const { mockDb } = await import("@/lib/mockDatabase");
+                    setAllStudentsList(mockDb.getStudents());
+                    return;
+                }
+                const snap = await getDocs(collection(db, "students"));
+                const list = snap.docs.map(d => ({
+                    firestoreId: d.id,
+                    name: d.data().name as string,
+                    class: d.data().class as string,
+                    id: Number(d.data().id)
+                })) as Student[];
+                setAllStudentsList(list);
+            } catch (err) {
+                console.error("Erro ao buscar lista de alunos no painel de chamada:", err);
+            }
+        }
+        fetchAllStudents();
+    }, [role]);
+
+    // Recalcular número sugerido para transferência
+    useEffect(() => {
+        if (!transferCandidate) return;
+        
+        const finalTargetClass = isTransferNewClass ? transferCustomClass.trim().toUpperCase() : transferTargetClass;
+        if (!finalTargetClass) {
+            setTransferNewNumber(transferCandidate.id);
+            return;
+        }
+
+        const targetStudents = allStudentsList.filter(
+            s => s.class.trim().toUpperCase().replace(/°/g, 'º') === finalTargetClass.replace(/°/g, 'º')
+        );
+        
+        if (targetStudents.length > 0) {
+            const maxId = Math.max(...targetStudents.map(s => s.id));
+            setTransferNewNumber(maxId + 1);
+        } else {
+            setTransferNewNumber(1);
+        }
+    }, [transferTargetClass, isTransferNewClass, transferCustomClass, transferCandidate, allStudentsList]);
+
+    const handleTransferStudent = async () => {
+        if (!transferCandidate) return;
+        const finalTargetClass = (isTransferNewClass ? transferCustomClass.trim() : transferTargetClass).toUpperCase().replace(/°/g, 'º');
+        
+        if (!finalTargetClass) {
+            alert("Por favor, especifique a turma de destino.");
+            return;
+        }
+
+        if (finalTargetClass === transferCandidate.class.trim().toUpperCase().replace(/°/g, 'º')) {
+            alert("A turma de destino é a mesma da turma de origem.");
+            return;
+        }
+
+        setIsTransferSaving(true);
+        try {
+            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                const { mockDb } = await import("@/lib/mockDatabase");
+                mockDb.saveStudent({
+                    firestoreId: transferCandidate.firestoreId,
+                    id: Number(transferNewNumber),
+                    name: transferCandidate.name,
+                    class: finalTargetClass
+                });
+                
+                alert(`Estudante transferido com sucesso para a turma ${finalTargetClass}!`);
+                window.location.reload();
+                return;
+            }
+
+            const studentRef = doc(db, "students", transferCandidate.firestoreId);
+            await setDoc(studentRef, {
+                class: finalTargetClass,
+                id: Number(transferNewNumber)
+            }, { merge: true });
+
+            alert(`Estudante transferido com sucesso para a turma ${finalTargetClass}!`);
+            window.location.reload();
+        } catch (err) {
+            console.error("Erro ao transferir aluno:", err);
+            alert("Erro ao transferir o aluno.");
+        } finally {
+            setIsTransferSaving(false);
+            setTransferCandidate(null);
+        }
+    };
+
+    const uniqueClasses = Array.from(
+        new Set(allStudentsList.map(s => s.class.trim().toUpperCase().replace(/°/g, 'º')))
+    ).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true, sensitivity: "base" }));
 
     // Busca os horários dinâmicos do Firebase
     useEffect(() => {
@@ -434,6 +541,19 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                                             </button>
                                             &bull;
                                             <button
+                                                onClick={() => {
+                                                    setTransferCandidate(student);
+                                                    setIsTransferNewClass(false);
+                                                    setTransferCustomClass("");
+                                                    const defaultTarget = uniqueClasses.find(c => c !== student.class.trim().toUpperCase().replace(/°/g, 'º')) || "";
+                                                    setTransferTargetClass(defaultTarget);
+                                                }}
+                                                className="text-blue-500 hover:text-blue-700 font-medium cursor-pointer"
+                                            >
+                                                Transferir
+                                            </button>
+                                            &bull;
+                                            <button
                                                 onClick={() => setDeleteCandidate({ id: student.firestoreId, name: student.name })}
                                                 className="text-red-500 hover:text-red-700 font-medium cursor-pointer"
                                             >
@@ -636,6 +756,103 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                                 className="flex-1 bg-blue-600 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/30 disabled:opacity-50 flex justify-center items-center"
                             >
                                 {isAddingStudent ? "Salvando..." : "Salvar"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Modal de Transferência (Pop-up) */}
+            {transferCandidate && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl space-y-6 text-left">
+                        <div className="text-center">
+                            <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mx-auto border-4 border-blue-50 mb-4 shadow-inner">
+                                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                                </svg>
+                            </div>
+                            <h3 className="text-2xl font-extrabold text-gray-900 tracking-tight">Transferir Estudante</h3>
+                            <p className="text-gray-500 mt-1 text-sm">Selecione a turma de destino para <strong className="text-gray-900 uppercase font-black">{transferCandidate.name}</strong></p>
+                        </div>
+                        <div className="space-y-4">
+                            <div className="space-y-1">
+                                <div className="flex justify-between items-center mb-1">
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Turma de Destino</label>
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            setIsTransferNewClass(!isTransferNewClass);
+                                            setTransferTargetClass("");
+                                            setTransferCustomClass("");
+                                        }}
+                                        className="text-xs text-blue-600 hover:text-blue-800 font-bold"
+                                    >
+                                        {isTransferNewClass ? "Escolher existente" : "Nova turma..."}
+                                    </button>
+                                </div>
+                                {isTransferNewClass ? (
+                                    <input
+                                        type="text"
+                                        value={transferCustomClass}
+                                        onChange={e => setTransferCustomClass(e.target.value)}
+                                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-gray-50 uppercase font-bold"
+                                        placeholder="Ex: 2ºB"
+                                        autoFocus
+                                    />
+                                ) : (
+                                    <select
+                                        value={transferTargetClass}
+                                        onChange={e => setTransferTargetClass(e.target.value)}
+                                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-white font-bold"
+                                    >
+                                        <option value="">Selecione...</option>
+                                        {uniqueClasses.map(cls => (
+                                            <option key={cls} value={cls}>Turma {cls}</option>
+                                        ))}
+                                    </select>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                    Novo Número de Chamada (Nº)
+                                </label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={transferNewNumber}
+                                    onChange={e => setTransferNewNumber(Number(e.target.value))}
+                                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-gray-50 font-bold text-gray-900"
+                                />
+                                <p className="text-[11px] text-gray-400 mt-1">
+                                    Preenchido automaticamente com o próximo número disponível na turma de destino.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="bg-amber-50 rounded-xl p-3 border border-amber-200/60">
+                            <p className="text-[11px] text-amber-700 leading-relaxed font-semibold">
+                                * As chamadas realizadas anteriormente não serão afetadas. O estudante constará na nova turma a partir das próximas chamadas.
+                            </p>
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setTransferCandidate(null)}
+                                className="flex-1 bg-gray-100 text-gray-700 font-bold py-3.5 px-4 rounded-xl hover:bg-gray-200 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleTransferStudent}
+                                disabled={isTransferSaving}
+                                className="flex-1 bg-blue-600 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/30 disabled:opacity-50 flex justify-center items-center gap-2"
+                            >
+                                {isTransferSaving ? (
+                                    <>
+                                        <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+                                        <span>Salvando...</span>
+                                    </>
+                                ) : (
+                                    "Confirmar"
+                                )}
                             </button>
                         </div>
                     </div>
