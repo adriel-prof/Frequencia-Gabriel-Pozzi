@@ -28,7 +28,7 @@ try {
 export { auth, db, app };
 export const googleProvider = new GoogleAuthProvider();
 
-// Opicional: restrição customizada forçada no frontend (embora recomendado pelo Google Cloud)
-googleProvider.setCustomParameters({
-  hd: "prof.educacao.sp.gov.br", // Hosted Domain restringe a UI do Google
-});
+// Opcional: restrição customizada forçada no frontend (comentado para permitir múltiplos domínios institucionais)
+// googleProvider.setCustomParameters({
+//   hd: "prof.educacao.sp.gov.br", // Hosted Domain restringe a UI do Google
+// });
