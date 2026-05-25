@@ -5,7 +5,10 @@ service cloud.firestore {
     
     // Função utilitária para verificar se o usuário logado tem o domínio correto
     function isProf() {
-      return request.auth != null && request.auth.token.email.matches('.*@prof[.]educacao[.]sp[.]gov[.]br$');
+      return request.auth != null && (
+        request.auth.token.email.matches('.*@prof[.]educacao[.]sp[.]gov[.]br$') ||
+        request.auth.token.email.matches('.*@servidor[.]educacao[.]sp[.]gov[.]br$')
+      );
     }
 
     // Regras da coleção 'students'

@@ -21,6 +21,12 @@ export default function LoginPage() {
         }
     }, [user, loading, router]);
 
+    useEffect(() => {
+        if (error) {
+            setIsSigningIn(false);
+        }
+    }, [error]);
+
     const handleSignIn = async () => {
         setIsSigningIn(true);
         try {
