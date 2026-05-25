@@ -3,7 +3,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Função utilitária para verificar se o usuário logado tem o domínio correto
+    // Função utilitária para verificar se o usuário logado tem o domínio correto (@prof ou @servidor)
     function isProf() {
       return request.auth != null && (
         request.auth.token.email.matches('.*@prof[.]educacao[.]sp[.]gov[.]br$') ||
@@ -11,23 +11,52 @@ service cloud.firestore {
       );
     }
 
+    // Função para verificar se o usuário é administrador
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.email == "adrielsilva@prof.educacao.sp.gov.br" ||
+        (exists(/databases/$(database)/documents/roles/$(request.auth.token.email)) &&
+         get(/databases/$(database)/documents/roles/$(request.auth.token.email)).data.role == 'admin')
+      );
+    }
+
+    // Regras da coleção 'roles'
+    match /roles/{email} {
+      // Qualquer professor logado pode ler/escrever seu próprio documento de role (necessário para cadastro no primeiro login)
+      allow read, write: if isProf() && request.auth.token.email == email;
+      // Administradores podem ler e gravar qualquer documento da coleção roles
+      allow read, write: if isAdmin();
+    }
+
     // Regras da coleção 'students'
     match /students/{docId} {
       allow read: if isProf();
-      allow write: if isProf() && request.auth.token.email == "gestor_email@prof.educacao.sp.gov.br"; // Futuramente ajustável 
+      allow write: if isProf() && (isAdmin() || request.auth.token.email == "gestor_email@prof.educacao.sp.gov.br");
     }
 
     // Regras da coleção 'attendance'
     match /attendance/{docId} {
       allow read: if isProf();
       allow create: if isProf(); // Permite criar a chamada
-      allow update, delete: if false; // Professores não podem apagar/alterar depois de enviado, ou ajuste conforme a gestão desejar
+      allow update, delete: if isAdmin(); // Administradores podem gerenciar/atualizar
+    }
+
+    // Regras da coleção 'attendance_history'
+    match /attendance_history/{docId} {
+      allow read, create: if isProf();
+      allow update, delete: if isAdmin();
     }
     
-    // Regras da coleção 'config'
+    // Regras da coleção 'settings'
+    match /settings/{docId} {
+      allow read: if isProf();
+      allow write: if isAdmin();
+    }
+    
+    // Fallback retrocompatível para 'config'
     match /config/{docId} {
       allow read: if isProf();
-      allow write: if false; // Somente administradores (via console) podem alterar as configurações
+      allow write: if isAdmin();
     }
   }
 }
