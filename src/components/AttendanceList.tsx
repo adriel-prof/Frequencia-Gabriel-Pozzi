@@ -424,15 +424,22 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             
             if (typeof window !== "undefined" && window.location.hostname === "localhost") {
                 const { mockDb } = await import("@/lib/mockDatabase");
-                const batchRecords = students.map(s => ({
-                    studentId: s.id,
-                    studentName: s.name,
-                    studentClass: normalizeClassName(s.class),
-                    studentFirestoreId: s.firestoreId,
-                    date: today,
-                    status: attendance[s.firestoreId],
-                    teacher: user?.email || "adrielsilva@prof.educacao.sp.gov.br"
-                }));
+                const batchRecords = students.map(s => {
+                    const currentStatus = attendance[s.firestoreId];
+                    if (currentStatus !== "D" && s.dispensed) {
+                        mockDb.removeDispensation(s.firestoreId);
+                        s.dispensed = false;
+                    }
+                    return {
+                        studentId: s.id,
+                        studentName: s.name,
+                        studentClass: normalizeClassName(s.class),
+                        studentFirestoreId: s.firestoreId,
+                        date: today,
+                        status: currentStatus,
+                        teacher: user?.email || "adrielsilva@prof.educacao.sp.gov.br"
+                    };
+                });
                 mockDb.saveAttendanceBatch(batchRecords);
                 setShowSuccessModal(true);
                 setFeedback(null);
@@ -446,6 +453,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 // Ao criar um ID com base na data + aluno, garantimos a sobrescrita (merge)
                 const docId = `att_${s.firestoreId}_${dateKey}`;
                 const docRef = doc(db, "attendance", docId);
+                const currentStatus = attendance[s.firestoreId];
 
                 batch.set(docRef, {
                     studentId: s.id,
@@ -453,10 +461,16 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     studentClass: normalizeClassName(s.class),
                     studentFirestoreId: s.firestoreId,
                     date: today,
-                    status: attendance[s.firestoreId],
+                    status: currentStatus,
                     teacher: user?.email,
                     timestamp: serverTimestamp(),
                 });
+
+                if (currentStatus !== "D" && s.dispensed) {
+                    const studentRef = doc(db, "students", s.firestoreId);
+                    batch.update(studentRef, { dispensed: false });
+                    s.dispensed = false;
+                }
             });
 
             // Registrar Log de Auditoria no Histórico Principal
