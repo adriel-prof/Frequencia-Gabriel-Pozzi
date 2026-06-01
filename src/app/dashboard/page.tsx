@@ -25,6 +25,8 @@ type Student = {
 
 const LOCK_DATE = "2026-04-06";
 
+const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
+
 
 export default function DashboardPage() {
 
@@ -44,7 +46,7 @@ export default function DashboardPage() {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     const studentsList = mockDb.getStudents();
                     setStudents(studentsList);
-                    const uniqueClasses = Array.from(new Set(studentsList.map(s => s.class as string))).sort();
+                    const uniqueClasses = Array.from(new Set(studentsList.map(s => normalizeClassName(s.class as string)))).sort();
                     setAllClasses(uniqueClasses);
                     return;
                 }
@@ -56,7 +58,7 @@ export default function DashboardPage() {
                     id: Number(doc.data().id)
                 }));
                 setStudents(studentsList);
-                const uniqueClasses = Array.from(new Set(studentsList.map(s => s.class as string))).sort();
+                const uniqueClasses = Array.from(new Set(studentsList.map(s => normalizeClassName(s.class as string)))).sort();
                 setAllClasses(uniqueClasses);
             } catch (err) {
                 console.error("Erro ao buscar turmas e alunos:", err);
@@ -107,7 +109,6 @@ export default function DashboardPage() {
         );
     }
 
-    const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
     const filteredRecords = records;
     const classes = Array.from(new Set(filteredRecords.map(r => normalizeClassName(r.studentClass))));
     const missingClasses = allClasses.filter(cls => !classes.includes(normalizeClassName(cls)));

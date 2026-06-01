@@ -198,11 +198,17 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     
                     students.forEach((s) => {
                         const isDispensed = localDispensed.has(s.firestoreId);
-                        if (isDispensed) {
-                            initialAttendance[s.firestoreId] = existingMap[s.firestoreId] || "D";
+                        const hasExistingRecord = s.firestoreId in existingMap;
+                        if (hasExistingRecord) {
+                            initialAttendance[s.firestoreId] = existingMap[s.firestoreId];
+                            if (existingMap[s.firestoreId] === "D") {
+                                initialDispensed.add(s.firestoreId);
+                            }
+                        } else if (isDispensed) {
+                            initialAttendance[s.firestoreId] = "D";
                             initialDispensed.add(s.firestoreId);
                         } else {
-                            initialAttendance[s.firestoreId] = existingMap[s.firestoreId] || "P";
+                            initialAttendance[s.firestoreId] = "P";
                         }
                     });
                     
@@ -249,12 +255,17 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
 
                 // 2. Preencher o estado inicial
                 students.forEach((s) => {
-                    if (s.dispensed) {
+                    const hasExistingRecord = s.firestoreId in existingMap;
+                    if (hasExistingRecord) {
+                        initialAttendance[s.firestoreId] = existingMap[s.firestoreId];
+                        if (existingMap[s.firestoreId] === "D") {
+                            initialDispensed.add(s.firestoreId);
+                        }
+                    } else if (s.dispensed) {
                         initialAttendance[s.firestoreId] = "D";
                         initialDispensed.add(s.firestoreId);
                     } else {
-                        // Se já existir registro de hoje no banco, usa ele. Se não, padrão é "P"
-                        initialAttendance[s.firestoreId] = existingMap[s.firestoreId] || "P";
+                        initialAttendance[s.firestoreId] = "P";
                     }
                 });
 
@@ -306,6 +317,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 } else {
                     mockDb.removeDispensation(student.firestoreId);
                 }
+                student.dispensed = newDispensed;
                 setDispensedStudents(prev => {
                     const next = new Set(prev);
                     if (newDispensed) {
@@ -324,6 +336,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
 
             // Persiste no Firestore
             await setDoc(doc(db, "students", student.firestoreId), { dispensed: newDispensed }, { merge: true });
+            student.dispensed = newDispensed;
 
             setDispensedStudents(prev => {
                 const next = new Set(prev);
