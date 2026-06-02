@@ -32,7 +32,6 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     const [deleteCandidate, setDeleteCandidate] = useState<{ id: string, name: string } | null>(null);
     const [isDeletingStudent, setIsDeletingStudent] = useState(false);
     const [showAddStudentModal, setShowAddStudentModal] = useState(false);
-    const [newStudentId, setNewStudentId] = useState("");
     const [newStudentName, setNewStudentName] = useState("");
     const [isAddingStudent, setIsAddingStudent] = useState(false);
 
@@ -381,27 +380,69 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     };
 
     const handleAddStudent = async () => {
-        if (!newStudentName.trim() || !newStudentId) return;
+        if (!newStudentName.trim()) return;
         setIsAddingStudent(true);
         try {
             const studentClass = students[0]?.class || "Nova Turma";
+            const newName = newStudentName.trim().toUpperCase();
+
+            // 1. Obter a lista de estudantes atuais da mesma turma com o novo estudante incluído
+            const updatedStudentsList = [...students, {
+                firestoreId: "temp",
+                id: 0,
+                name: newName,
+                class: studentClass
+            }].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
             if (typeof window !== "undefined" && window.location.hostname === "localhost") {
                 const { mockDb } = await import("@/lib/mockDatabase");
-                mockDb.saveStudent({
-                    id: Number(newStudentId),
-                    name: newStudentName.trim().toUpperCase(),
-                    class: studentClass
-                });
+                
+                // No banco local, atualizamos os IDs de todos os alunos da turma
+                for (let i = 0; i < updatedStudentsList.length; i++) {
+                    const s = updatedStudentsList[i];
+                    const targetId = i + 1;
+                    if (s.firestoreId === "temp") {
+                        mockDb.saveStudent({
+                            id: targetId,
+                            name: s.name,
+                            class: studentClass
+                        });
+                    } else {
+                        mockDb.saveStudent({
+                            firestoreId: s.firestoreId,
+                            id: targetId,
+                            name: s.name,
+                            class: s.class
+                        });
+                    }
+                }
+                
                 window.location.reload();
                 return;
             }
 
-            await addDoc(collection(db, "students"), {
-                id: Number(newStudentId),
-                name: newStudentName.trim().toUpperCase(),
-                class: studentClass
-            });
+            // No Firestore, usamos um batch para atualizar todos os IDs
+            const batch = writeBatch(db);
+            
+            for (let i = 0; i < updatedStudentsList.length; i++) {
+                const s = updatedStudentsList[i];
+                const targetId = i + 1;
+                if (s.firestoreId === "temp") {
+                    const newDocRef = doc(collection(db, "students"));
+                    batch.set(newDocRef, {
+                        id: targetId,
+                        name: s.name,
+                        class: studentClass
+                    });
+                } else {
+                    const docRef = doc(db, "students", s.firestoreId);
+                    batch.update(docRef, {
+                        id: targetId
+                    });
+                }
+            }
+
+            await batch.commit();
             window.location.reload(); // Recarrega tela para ver o aluno adicionado
         } catch (err) {
             console.error(err);
@@ -410,7 +451,6 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             setIsAddingStudent(false);
             setShowAddStudentModal(false);
             setNewStudentName("");
-            setNewStudentId("");
         }
     };
 
@@ -736,24 +776,9 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                                 </svg>
                             </div>
                             <h3 className="text-2xl font-extrabold text-gray-900 tracking-tight">Adicionar Aluno</h3>
-                            <p className="text-gray-500 mt-1 text-sm">Insira os dados do novo aluno para a turma {students[0]?.class}</p>
+                            <p className="text-gray-500 mt-1 text-sm">Insira o nome do novo aluno para a turma {students[0]?.class}. O número da chamada será calculado automaticamente.</p>
                         </div>
                         <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
-                                    <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
-                                    </svg>
-                                    Número na Chamada
-                                </label>
-                                <input
-                                    type="number"
-                                    value={newStudentId}
-                                    onChange={e => setNewStudentId(e.target.value)}
-                                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-gray-50"
-                                    placeholder="Ex: 45"
-                                />
-                            </div>
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
                                     <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -779,7 +804,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                             </button>
                             <button
                                 onClick={handleAddStudent}
-                                disabled={isAddingStudent || !newStudentName.trim() || !newStudentId}
+                                disabled={isAddingStudent || !newStudentName.trim()}
                                 className="flex-1 bg-blue-600 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/30 disabled:opacity-50 flex justify-center items-center"
                             >
                                 {isAddingStudent ? "Salvando..." : "Salvar"}
