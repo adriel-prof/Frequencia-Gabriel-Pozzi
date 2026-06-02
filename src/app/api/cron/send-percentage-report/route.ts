@@ -16,6 +16,7 @@ export async function GET(request: Request) {
         const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         studentsSnap.docs.forEach((doc: any) => {
+            if (doc.data().status === "TR") return;
             const cls = normalizeClassName(doc.data().class);
             studentsPerClass[cls] = (studentsPerClass[cls] || 0) + 1;
         });

@@ -10,7 +10,7 @@ type AttendanceRecord = {
     studentId: number;
     studentName: string;
     studentClass: string;
-    status: "P" | "F";
+    status: "P" | "F" | "D" | "A" | "TR";
     studentFirestoreId?: string;
 };
 
@@ -76,7 +76,7 @@ function PrintAbsencesContent() {
                         absences[cls].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
                     });
                     
-                    const studentsList = mockDb.getStudents();
+                    const studentsList = mockDb.getStudents().filter(s => s.status !== "TR");
                     const allClasses = Array.from(new Set(studentsList.map(s => normalizeClassName(s.class))));
                     const missing = allClasses
                         .filter(cls => !completedClassesToday.has(cls))
@@ -146,7 +146,7 @@ function PrintAbsencesContent() {
 
                 // Fetch all classes to find missing ones
                 const studentsSnap = await getDocs(collection(db, "students"));
-                const allClasses = Array.from(new Set(studentsSnap.docs.map(d => normalizeClassName(d.data().class as string))));
+                const allClasses = Array.from(new Set(studentsSnap.docs.filter(d => d.data().status !== "TR").map(d => normalizeClassName(d.data().class as string))));
                 
                 const missing = allClasses
                     .filter(cls => !completedClassesToday.has(cls))

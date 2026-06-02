@@ -9,6 +9,7 @@ type Student = {
     id: number;
     name: string;
     class: string;
+    status?: string;
 };
 
 export default function StudentsTransferPage() {
@@ -46,7 +47,8 @@ export default function StudentsTransferPage() {
                 firestoreId: docSnap.id,
                 name: docSnap.data().name as string,
                 class: docSnap.data().class as string,
-                id: Number(docSnap.data().id)
+                id: Number(docSnap.data().id),
+                status: docSnap.data().status as string
             })) as Student[];
             
             setStudents(list);
@@ -246,14 +248,19 @@ export default function StudentsTransferPage() {
                                     if (classCompare !== 0) return classCompare;
                                     return a.name.localeCompare(b.name, "pt-BR");
                                 }).map(student => (
-                                    <tr key={student.firestoreId} className="hover:bg-gray-50/50 transition-colors">
+                                    <tr key={student.firestoreId} className={`hover:bg-gray-50/50 transition-colors ${student.status === "TR" ? 'bg-gray-50/30 opacity-70' : ''}`}>
                                         <td className="px-6 py-4">
                                             <span className="px-2.5 py-1 bg-green-50 text-green-700 border border-green-200 rounded-md font-bold text-xs">
                                                 {student.class}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 font-semibold text-gray-500">{student.id}</td>
-                                        <td className="px-6 py-4 font-bold text-gray-900 uppercase">{student.name}</td>
+                                        <td className="px-6 py-4 font-bold text-gray-900 uppercase">
+                                            {student.name}
+                                            {student.status === "TR" && (
+                                                <span className="ml-2 bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-bold">TR</span>
+                                            )}
+                                        </td>
                                         <td className="px-6 py-4 text-right">
                                             <button
                                                 onClick={() => handleOpenTransferModal(student)}

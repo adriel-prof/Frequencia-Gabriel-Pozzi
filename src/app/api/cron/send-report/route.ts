@@ -71,7 +71,7 @@ export async function GET(request: Request) {
         // Buscar todas as turmas cadastradas nos alunos
         const studentsSnap = await adminDb.collection("students").get();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const allClasses = (Array.from(new Set(studentsSnap.docs.map((d: any) => normalizeClassName(d.data().class)))) as string[])
+        const allClasses = (Array.from(new Set(studentsSnap.docs.filter((d: any) => d.data().status !== "TR").map((d: any) => normalizeClassName(d.data().class)))) as string[])
             .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
         const missingClasses = allClasses.filter(cls => !completedClassesToday.has(cls));

@@ -11,7 +11,7 @@ type AttendanceRecord = {
     studentName: string;
     studentClass: string;
     date: string;
-    status: "P" | "F" | "D" | "A";
+    status: "P" | "F" | "D" | "A" | "TR";
     teacher: string;
     studentFirestoreId?: string;
 };
@@ -21,6 +21,7 @@ type Student = {
     name: string;
     class: string;
     id: number;
+    status?: string;
 };
 
 const LOCK_DATE = "2026-04-06";
@@ -55,7 +56,8 @@ export default function DashboardPage() {
                     firestoreId: doc.id,
                     name: doc.data().name as string,
                     class: doc.data().class as string,
-                    id: Number(doc.data().id)
+                    id: Number(doc.data().id),
+                    status: doc.data().status as string
                 }));
                 setStudents(studentsList);
                 const uniqueClasses = Array.from(new Set(studentsList.map(s => normalizeClassName(s.class as string)))).sort();
@@ -242,8 +244,10 @@ export default function DashboardPage() {
                                 let totalAbsences = 0;
 
                                 classStudents.forEach(s => {
+                                    if (s.status === "TR") return;
                                     const record = classRecords.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
                                     if (record) {
+                                        if (record.status === "TR") return;
                                         if (record.status === "P" || record.status === "A") {
                                             totalPresences++;
                                         } else if (record.status === "F") {
@@ -310,8 +314,10 @@ export default function DashboardPage() {
                 let totalAbsences = 0;
 
                 classStudents.forEach(s => {
+                    if (s.status === "TR") return;
                     const record = classRecords.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
                     if (record) {
+                        if (record.status === "TR") return;
                         if (record.status === "P" || record.status === "A") {
                             totalPresences++;
                         } else if (record.status === "F") {
@@ -351,21 +357,23 @@ export default function DashboardPage() {
                                 <tbody className="divide-y divide-gray-50">
                                     {classStudents.sort((a, b) => a.name.localeCompare(b.name, "pt-BR")).map(student => {
                                         const record = classRecords.find(r => r.studentFirestoreId === student.firestoreId || r.studentName === student.name);
-                                        const status = record ? record.status : "P";
-                                        const teacher = record ? record.teacher : "Sistema (Padrão)";
+                                        const isTR = student.status === "TR";
+                                        const status = isTR ? "TR" : (record ? record.status : "P");
+                                        const teacher = isTR ? "Sistema (TR)" : (record ? record.teacher : "Sistema (Padrão)");
 
                                         return (
-                                            <tr key={student.firestoreId} className="hover:bg-gray-50/50">
+                                            <tr key={student.firestoreId} className={`hover:bg-gray-50/50 ${isTR ? 'bg-gray-50/50 opacity-60' : ''}`}>
                                                 <td className="px-6 py-3 text-gray-500">{student.id}</td>
-                                                <td className="px-6 py-3 font-medium text-gray-900">{student.name}</td>
+                                                <td className={`px-6 py-3 font-medium ${isTR ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{student.name}</td>
                                                 <td className="px-6 py-3">
                                                     <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md font-bold text-xs ${
                                                         status === "P" ? "bg-green-100 text-green-700" :
                                                         status === "F" ? "bg-red-100 text-red-700" :
                                                         status === "A" ? "bg-amber-100 text-amber-700" :
+                                                        status === "TR" ? "bg-gray-100 text-gray-700 border border-gray-200" :
                                                         "bg-blue-100 text-blue-700" // "D"
                                                     }`}>
-                                                        {status}
+                                                        {status === "TR" ? "TR (INT. TRANSF.)" : status}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-3 text-gray-500">{teacher}</td>

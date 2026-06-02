@@ -6,6 +6,7 @@ export type MockStudent = {
     id: number;
     name: string;
     class: string;
+    status?: string;
 };
 
 export type MockAttendance = {
@@ -14,7 +15,7 @@ export type MockAttendance = {
     studentId: number;
     studentName: string;
     studentClass: string;
-    status: "P" | "F" | "D" | "A";
+    status: "P" | "F" | "D" | "A" | "TR";
     date: string;
     teacher: string;
 };

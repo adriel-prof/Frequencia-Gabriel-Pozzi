@@ -8,7 +8,7 @@ import { Suspense } from "react";
 
 type AttendanceRecord = {
     studentClass: string;
-    status: "P" | "F" | "D" | "A";
+    status: "P" | "F" | "D" | "A" | "TR";
     studentName: string;
     studentFirestoreId?: string;
 };
@@ -26,7 +26,7 @@ function PrintContent() {
             try {
                 if (typeof window !== "undefined" && window.location.hostname === "localhost") {
                     const { mockDb } = await import("@/lib/mockDatabase");
-                    const studentsList = mockDb.getStudents();
+                    const studentsList = mockDb.getStudents().filter(s => s.status !== "TR");
                     const recordsData = mockDb.getAttendance(date || undefined) as unknown as AttendanceRecord[];
                     
                     const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
@@ -64,11 +64,13 @@ function PrintContent() {
 
                 // Busca alunos atuais
                 const studentsSnap = await getDocs(collection(db, "students"));
-                const studentsList = studentsSnap.docs.map(doc => ({
-                    firestoreId: doc.id,
-                    name: doc.data().name as string,
-                    class: doc.data().class as string
-                }));
+                const studentsList = studentsSnap.docs
+                    .filter(doc => doc.data().status !== "TR")
+                    .map(doc => ({
+                        firestoreId: doc.id,
+                        name: doc.data().name as string,
+                        class: doc.data().class as string
+                    }));
 
                 // Busca registros de chamada
                 const q = query(collection(db, "attendance"), where("date", "==", date));

@@ -11,9 +11,10 @@ type Student = {
     name: string;
     class: string;
     dispensed?: boolean;
+    status?: string;
 };
 
-type AttendanceStatus = "P" | "F" | "D" | "A";
+type AttendanceStatus = "P" | "F" | "D" | "A" | "TR";
 
 const LOCK_DATE = "2026-04-06";
 
@@ -61,7 +62,8 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     firestoreId: d.id,
                     name: d.data().name as string,
                     class: d.data().class as string,
-                    id: Number(d.data().id)
+                    id: Number(d.data().id),
+                    status: d.data().status as string
                 })) as Student[];
                 setAllStudentsList(list);
             } catch (err) {
@@ -198,7 +200,9 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     students.forEach((s) => {
                         const isDispensed = localDispensed.has(s.firestoreId);
                         const hasExistingRecord = s.firestoreId in existingMap;
-                        if (hasExistingRecord) {
+                        if (s.status === "TR") {
+                            initialAttendance[s.firestoreId] = "TR";
+                        } else if (hasExistingRecord) {
                             initialAttendance[s.firestoreId] = existingMap[s.firestoreId];
                             if (existingMap[s.firestoreId] === "D") {
                                 initialDispensed.add(s.firestoreId);
@@ -255,7 +259,9 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 // 2. Preencher o estado inicial
                 students.forEach((s) => {
                     const hasExistingRecord = s.firestoreId in existingMap;
-                    if (hasExistingRecord) {
+                    if (s.status === "TR") {
+                        initialAttendance[s.firestoreId] = "TR";
+                    } else if (hasExistingRecord) {
                         initialAttendance[s.firestoreId] = existingMap[s.firestoreId];
                         if (existingMap[s.firestoreId] === "D") {
                             initialDispensed.add(s.firestoreId);
@@ -588,12 +594,16 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             <div className="space-y-3">
                 {students.map((student) => {
                     const isDispensed = dispensedStudents.has(student.firestoreId);
+                    const isTR = student.status === "TR";
                     return (
-                        <div key={student.firestoreId} className={`p-4 rounded-2xl shadow-sm border flex items-center justify-between gap-4 transition-all ${isDispensed ? 'bg-gray-50 border-gray-200 opacity-70' : 'bg-white border-gray-100'}`}>
+                        <div key={student.firestoreId} className={`p-4 rounded-2xl shadow-sm border flex items-center justify-between gap-4 transition-all ${isTR ? 'bg-gray-100 border-gray-200 opacity-60' : isDispensed ? 'bg-gray-50 border-gray-200 opacity-70' : 'bg-white border-gray-100'}`}>
                             <div className="flex-1 truncate">
-                                <p className={`font-semibold truncate ${isDispensed ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{student.name}</p>
+                                <p className={`font-semibold truncate ${isTR || isDispensed ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{student.name}</p>
                                 <p className="text-xs text-gray-400 flex items-center gap-2 flex-wrap">
                                     Nº {student.id} &bull; {student.class}
+                                    {isTR && (
+                                        <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-bold">TR - INTENÇÃO DE TRANSFERÊNCIA</span>
+                                    )}
                                     {isDispensed && (
                                         <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px] font-bold">DISPENSA MÉDICA</span>
                                     )}
@@ -601,13 +611,15 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                                         <>
                                             &bull;
                                             <button
+                                                disabled={isTR}
                                                 onClick={() => toggleDispensa(student)}
-                                                className={`font-medium cursor-pointer ${isDispensed ? 'text-amber-600 hover:text-amber-800' : 'text-amber-500 hover:text-amber-700'}`}
+                                                className={`font-medium cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${isDispensed ? 'text-amber-600 hover:text-amber-800' : 'text-amber-500 hover:text-amber-700'}`}
                                             >
                                                 {isDispensed ? 'Remover Dispensa' : 'Dispensa Médica'}
                                             </button>
                                             &bull;
                                             <button
+                                                disabled={isTR}
                                                 onClick={() => {
                                                     setTransferCandidate(student);
                                                     setIsTransferNewClass(false);
@@ -615,7 +627,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                                                     const defaultTarget = uniqueClasses.find(c => c !== student.class.trim().toUpperCase().replace(/°/g, 'º')) || "";
                                                     setTransferTargetClass(defaultTarget);
                                                 }}
-                                                className="text-blue-500 hover:text-blue-700 font-medium cursor-pointer"
+                                                className="text-blue-500 hover:text-blue-700 font-medium cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                             >
                                                 Transferir
                                             </button>
@@ -630,51 +642,57 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                                     )}
                                 </p>
                             </div>
-
-                            <div className="flex gap-2">
-                                <button
-                                    disabled={!isAllowed || isSubmitting}
-                                    onClick={() => handleStatusChange(student.firestoreId, "P")}
-                                    className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "P"
-                                        ? "bg-green-500 text-white shadow-md shadow-green-500/30 scale-105 ring-2 ring-green-600 ring-offset-2"
-                                        : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                                        } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
-                                >
-                                    P
-                                </button>
-                                <button
-                                    disabled={!isAllowed || isSubmitting}
-                                    onClick={() => handleStatusChange(student.firestoreId, "F")}
-                                    className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "F"
-                                        ? "bg-red-500 text-white shadow-md shadow-red-500/30 scale-105 ring-2 ring-red-600 ring-offset-2"
-                                        : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                                        } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
-                                >
-                                    F
-                                </button>
-                                <button
-                                    disabled={!isAllowed || isSubmitting}
-                                    onClick={() => handleStatusChange(student.firestoreId, "A")}
-                                    className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "A"
-                                        ? "bg-amber-500 text-white shadow-md shadow-amber-500/30 scale-105 ring-2 ring-amber-600 ring-offset-2"
-                                        : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                                        } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
-                                >
-                                    A
-                                </button>
-                                {isDispensed && (
+ 
+                            {isTR ? (
+                                <div className="w-14 h-14 bg-gray-200 text-gray-500 rounded-xl flex items-center justify-center font-bold text-lg border border-gray-300">
+                                    TR
+                                </div>
+                            ) : (
+                                <div className="flex gap-2">
                                     <button
                                         disabled={!isAllowed || isSubmitting}
-                                        onClick={() => handleStatusChange(student.firestoreId, "D")}
-                                        className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "D"
-                                            ? "bg-blue-500 text-white shadow-md shadow-blue-500/30 scale-105 ring-2 ring-blue-600 ring-offset-2"
+                                        onClick={() => handleStatusChange(student.firestoreId, "P")}
+                                        className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "P"
+                                            ? "bg-green-500 text-white shadow-md shadow-green-500/30 scale-105 ring-2 ring-green-600 ring-offset-2"
                                             : "bg-gray-100 text-gray-400 hover:bg-gray-200"
                                             } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
                                     >
-                                        D
+                                        P
                                     </button>
-                                )}
-                            </div>
+                                    <button
+                                        disabled={!isAllowed || isSubmitting}
+                                        onClick={() => handleStatusChange(student.firestoreId, "F")}
+                                        className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "F"
+                                            ? "bg-red-500 text-white shadow-md shadow-red-500/30 scale-105 ring-2 ring-red-600 ring-offset-2"
+                                            : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                            } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
+                                    >
+                                        F
+                                    </button>
+                                    <button
+                                        disabled={!isAllowed || isSubmitting}
+                                        onClick={() => handleStatusChange(student.firestoreId, "A")}
+                                        className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "A"
+                                            ? "bg-amber-500 text-white shadow-md shadow-amber-500/30 scale-105 ring-2 ring-amber-600 ring-offset-2"
+                                            : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                            } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
+                                    >
+                                        A
+                                    </button>
+                                    {isDispensed && (
+                                        <button
+                                            disabled={!isAllowed || isSubmitting}
+                                            onClick={() => handleStatusChange(student.firestoreId, "D")}
+                                            className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "D"
+                                                ? "bg-blue-500 text-white shadow-md shadow-blue-500/30 scale-105 ring-2 ring-blue-600 ring-offset-2"
+                                                : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                                } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
+                                        >
+                                            D
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     );
                 })}

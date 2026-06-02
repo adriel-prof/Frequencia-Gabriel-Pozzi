@@ -10,7 +10,7 @@ type AttendanceRecord = {
     studentName: string;
     studentClass: string;
     date: string;
-    status: "P" | "F" | "D" | "A";
+    status: "P" | "F" | "D" | "A" | "TR";
     teacher: string;
 };
 
@@ -171,9 +171,10 @@ export function TeacherHistory() {
                                                     record.status === "P" ? "bg-green-100 text-green-700" : 
                                                     record.status === "F" ? "bg-red-100 text-red-700" :
                                                     record.status === "A" ? "bg-amber-100 text-amber-700" :
+                                                    record.status === "TR" ? "bg-gray-100 text-gray-700 border border-gray-200" :
                                                     "bg-blue-100 text-blue-700"
                                                 }`}>
-                                                    {record.status}
+                                                    {record.status === "TR" ? "TR (INT. TRANSF.)" : record.status}
                                                 </span>
                                             </td>
                                         </tr>
