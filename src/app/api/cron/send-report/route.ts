@@ -47,7 +47,7 @@ export async function GET(request: Request) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             studentAttendanceSnap.docs.forEach((d: any) => {
                 const data = d.data();
-                if (data.date >= LOCK_DATE) {
+                if (data.date >= LOCK_DATE && data.status !== "TR") {
                     total++;
                     if (data.status === "F") {
                         absences++;

@@ -48,10 +48,11 @@ export async function GET(request: Request) {
         const sortedClasses = Object.keys(studentsPerClass).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
         
         for (const cls of sortedClasses) {
-            // Contagem total de registros da turma no ano
+            // Contagem total de registros da turma no ano (excluindo TR)
             const totalSnap = await attendanceRef
                 .where("studentClass", "==", cls)
                 .where("date", ">=", LOCK_DATE)
+                .where("status", "in", ["P", "F", "D", "A"])
                 .count()
                 .get();
             

@@ -59,6 +59,46 @@ export default function StudentsTransferPage() {
         }
     };
 
+    const handleToggleTR = async (student: Student) => {
+        const newTR = student.status !== "TR";
+        if (!confirm(`Deseja realmente ${newTR ? 'marcar' : 'remover'} o status TR (Intenção de Transferência) para o aluno ${student.name}?`)) {
+            return;
+        }
+
+        try {
+            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                const { mockDb } = await import("@/lib/mockDatabase");
+                const allStudents = mockDb.getStudents();
+                const foundIdx = allStudents.findIndex(s => s.firestoreId === student.firestoreId);
+                if (foundIdx >= 0) {
+                    allStudents[foundIdx].status = newTR ? "TR" : "";
+                    localStorage.setItem("mock_students", JSON.stringify(allStudents));
+                }
+                
+                setStudents(prev => prev.map(s => 
+                    s.firestoreId === student.firestoreId 
+                        ? { ...s, status: newTR ? "TR" : "" } 
+                        : s
+                ));
+                return;
+            }
+
+            const studentRef = doc(db, "students", student.firestoreId);
+            await setDoc(studentRef, {
+                status: newTR ? "TR" : ""
+            }, { merge: true });
+
+            setStudents(prev => prev.map(s => 
+                s.firestoreId === student.firestoreId 
+                    ? { ...s, status: newTR ? "TR" : "" } 
+                    : s
+            ));
+        } catch (error) {
+            console.error("Erro ao alterar status TR:", error);
+            alert("Erro ao alterar status TR.");
+        }
+    };
+
     // Obter todas as turmas únicas para filtros e seleção
     const uniqueClasses = Array.from(
         new Set(students.map(s => s.class.trim().toUpperCase().replace(/°/g, 'º')))
@@ -261,7 +301,7 @@ export default function StudentsTransferPage() {
                                                 <span className="ml-2 bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-bold">TR</span>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 text-right">
+                                        <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
                                             <button
                                                 onClick={() => handleOpenTransferModal(student)}
                                                 className="bg-blue-50 text-blue-600 font-bold px-3.5 py-1.5 rounded-lg border border-blue-100 hover:bg-blue-100 transition-colors text-xs inline-flex items-center gap-1.5 shadow-sm"
@@ -270,6 +310,16 @@ export default function StudentsTransferPage() {
                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                                                 </svg>
                                                 Transferir
+                                            </button>
+                                            <button
+                                                onClick={() => handleToggleTR(student)}
+                                                className={`font-bold px-3.5 py-1.5 rounded-lg border transition-colors text-xs inline-flex items-center gap-1.5 shadow-sm ${
+                                                    student.status === "TR" 
+                                                        ? "bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-200" 
+                                                        : "bg-purple-50 text-purple-600 border-purple-100 hover:bg-purple-100"
+                                                }`}
+                                            >
+                                                {student.status === "TR" ? "Remover TR" : "Marcar TR"}
                                             </button>
                                         </td>
                                     </tr>

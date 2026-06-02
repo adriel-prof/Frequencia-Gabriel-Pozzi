@@ -58,7 +58,7 @@ function PrintAbsencesContent() {
                             let totalAbsences = 0;
                             
                             studentRecords.forEach(rec => {
-                                if (rec.date >= LOCK_DATE) {
+                                if (rec.date >= LOCK_DATE && rec.status !== "TR") {
                                     total++;
                                     if (rec.status === "F") {
                                         totalAbsences++;
@@ -121,7 +121,7 @@ function PrintAbsencesContent() {
                             
                             studentAttendanceSnap.docs.forEach(d => {
                                 const rec = d.data() as AttendanceRecord & { date: string };
-                                if (rec.date >= LOCK_DATE) {
+                                if (rec.date >= LOCK_DATE && rec.status !== "TR") {
                                     total++;
                                     if (rec.status === "F") {
                                         totalAbsences++;

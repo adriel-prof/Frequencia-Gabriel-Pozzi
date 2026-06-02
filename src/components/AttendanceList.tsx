@@ -363,6 +363,34 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
         }
     };
 
+    const toggleTR = async (student: Student) => {
+        const newTR = student.status !== "TR";
+        if (!confirm(`Deseja realmente ${newTR ? 'marcar' : 'remover'} o status TR (Intenção de Transferência) para o aluno ${student.name}?`)) {
+            return;
+        }
+        try {
+            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                const { mockDb } = await import("@/lib/mockDatabase");
+                const allStudents = mockDb.getStudents();
+                const foundIdx = allStudents.findIndex(s => s.firestoreId === student.firestoreId);
+                if (foundIdx >= 0) {
+                    allStudents[foundIdx].status = newTR ? "TR" : "";
+                    localStorage.setItem("mock_students", JSON.stringify(allStudents));
+                }
+                student.status = newTR ? "TR" : "";
+                window.location.reload();
+                return;
+            }
+
+            await setDoc(doc(db, "students", student.firestoreId), { status: newTR ? "TR" : "" }, { merge: true });
+            student.status = newTR ? "TR" : "";
+            window.location.reload();
+        } catch (err) {
+            console.error("Erro ao alterar status TR:", err);
+            alert("Erro ao alterar intenção de transferência.");
+        }
+    };
+
     const confirmDeleteStudent = async () => {
         if (!deleteCandidate) return;
         setIsDeletingStudent(true);
@@ -630,6 +658,13 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                                                 className="text-blue-500 hover:text-blue-700 font-medium cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                             >
                                                 Transferir
+                                            </button>
+                                            &bull;
+                                            <button
+                                                onClick={() => toggleTR(student)}
+                                                className={`font-medium cursor-pointer ${isTR ? 'text-purple-600 hover:text-purple-800 font-bold' : 'text-purple-500 hover:text-purple-700'}`}
+                                            >
+                                                {isTR ? 'Remover TR' : 'Marcar TR'}
                                             </button>
                                             &bull;
                                             <button
