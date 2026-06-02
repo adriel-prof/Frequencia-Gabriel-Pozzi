@@ -241,10 +241,10 @@ export default function StudentsTransferPage() {
                             </thead>
                             <tbody className="divide-y divide-gray-50">
                                 {filteredStudents.sort((a, b) => {
-                                    // Ordena primeiro por classe e depois por id/número
+                                    // Ordena primeiro por classe e depois por nome (ordem alfabética)
                                     const classCompare = a.class.localeCompare(b.class, "pt-BR", { numeric: true });
                                     if (classCompare !== 0) return classCompare;
-                                    return a.id - b.id;
+                                    return a.name.localeCompare(b.name, "pt-BR");
                                 }).map(student => (
                                     <tr key={student.firestoreId} className="hover:bg-gray-50/50 transition-colors">
                                         <td className="px-6 py-4">

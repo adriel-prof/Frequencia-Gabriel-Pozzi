@@ -349,7 +349,7 @@ export default function DashboardPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
-                                    {classStudents.sort((a, b) => a.id - b.id).map(student => {
+                                    {classStudents.sort((a, b) => a.name.localeCompare(b.name, "pt-BR")).map(student => {
                                         const record = classRecords.find(r => r.studentFirestoreId === student.firestoreId || r.studentName === student.name);
                                         const status = record ? record.status : "P";
                                         const teacher = record ? record.teacher : "Sistema (Padrão)";

@@ -73,7 +73,7 @@ function PrintAbsencesContent() {
                     
                     // Ordena
                     Object.keys(absences).forEach(cls => {
-                        absences[cls].sort((a, b) => a.name.localeCompare(b.name));
+                        absences[cls].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
                     });
                     
                     const studentsList = mockDb.getStudents();
@@ -141,7 +141,7 @@ function PrintAbsencesContent() {
 
                 // Sort absences within each class
                 Object.keys(absences).forEach(cls => {
-                    absences[cls].sort((a, b) => a.name.localeCompare(b.name));
+                    absences[cls].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
                 });
 
                 // Fetch all classes to find missing ones

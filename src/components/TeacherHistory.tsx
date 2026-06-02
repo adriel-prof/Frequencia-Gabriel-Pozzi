@@ -159,7 +159,10 @@ export function TeacherHistory() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
-                                    {filteredRecords.filter(r => normalizeClassName(r.studentClass) === selectedClass).map(record => (
+                                    {filteredRecords
+                                        .filter(r => normalizeClassName(r.studentClass) === selectedClass)
+                                        .sort((a, b) => a.studentName.localeCompare(b.studentName, "pt-BR"))
+                                        .map(record => (
                                         <tr key={record.id} className="hover:bg-gray-50/50">
                                             <td className="px-6 py-3 text-gray-500">{record.studentId}</td>
                                             <td className="px-6 py-3 font-medium text-gray-900">{record.studentName}</td>

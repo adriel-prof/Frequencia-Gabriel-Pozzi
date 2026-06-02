@@ -39,17 +39,19 @@ export default function ChamadaPage() {
                 if (typeof window !== "undefined" && window.location.hostname === "localhost") {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     const fetchedStudents = mockDb.getStudents();
+                    fetchedStudents.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
                     setStudents(fetchedStudents);
                     setIsLoading(false);
                     return;
                 }
-                const q = query(collection(db, "students"), orderBy("id", "asc"));
+                const q = query(collection(db, "students"), orderBy("name", "asc"));
                 const snapshot = await getDocs(q);
                 const fetchedStudents = snapshot.docs.map(docSnap => ({
                     firestoreId: docSnap.id,
                     ...docSnap.data()
                 })) as Student[];
 
+                fetchedStudents.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
                 setStudents(fetchedStudents);
             } catch (err) {
                 console.error("Erro ao buscar alunos:", err);
