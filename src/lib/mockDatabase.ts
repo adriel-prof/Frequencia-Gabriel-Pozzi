@@ -104,7 +104,7 @@ const INITIAL_STUDENTS: MockStudent[] = [
 ];
 
 // Alunos pré-configurados com Dispensa Médica na simulação local
-const INITIAL_DISPENSED = ["U7Df0JEEK7yi2nz1LqIe", "6sZFPyas3bzz04SEGyjn"]; // Derik (1°A) e Vinicius (1°B)
+const INITIAL_DISPENSED: string[] = []; // Nenhuma dispensa médica global por padrão
 
 const STORAGE_KEYS = {
     STUDENTS: "mock_students",

@@ -185,7 +185,6 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 if (typeof window !== "undefined" && window.location.hostname === "localhost") {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     const localRecords = mockDb.getAttendance(today);
-                    const localDispensed = mockDb.getDispensedStudents();
                     
                     const initialAttendance: Record<string, AttendanceStatus> = {};
                     const initialDispensed = new Set<string>();
@@ -198,7 +197,6 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     });
                     
                     students.forEach((s) => {
-                        const isDispensed = localDispensed.has(s.firestoreId);
                         const hasExistingRecord = s.firestoreId in existingMap;
                         if (s.status === "TR") {
                             initialAttendance[s.firestoreId] = "TR";
@@ -207,9 +205,6 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                             if (existingMap[s.firestoreId] === "D") {
                                 initialDispensed.add(s.firestoreId);
                             }
-                        } else if (isDispensed) {
-                            initialAttendance[s.firestoreId] = "D";
-                            initialDispensed.add(s.firestoreId);
                         } else {
                             initialAttendance[s.firestoreId] = "P";
                         }
@@ -266,9 +261,6 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                         if (existingMap[s.firestoreId] === "D") {
                             initialDispensed.add(s.firestoreId);
                         }
-                    } else if (s.dispensed) {
-                        initialAttendance[s.firestoreId] = "D";
-                        initialDispensed.add(s.firestoreId);
                     } else {
                         initialAttendance[s.firestoreId] = "P";
                     }
@@ -312,55 +304,21 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
         setAttendance((prev) => ({ ...prev, [firestoreId]: status }));
     };
 
-    const toggleDispensa = async (student: Student) => {
+    const toggleDispensa = (student: Student) => {
         const newDispensed = !dispensedStudents.has(student.firestoreId);
-        try {
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
-                const { mockDb } = await import("@/lib/mockDatabase");
-                if (newDispensed) {
-                    mockDb.addDispensation(student.firestoreId);
-                } else {
-                    mockDb.removeDispensation(student.firestoreId);
-                }
-                student.dispensed = newDispensed;
-                setDispensedStudents(prev => {
-                    const next = new Set(prev);
-                    if (newDispensed) {
-                        next.add(student.firestoreId);
-                    } else {
-                        next.delete(student.firestoreId);
-                    }
-                    return next;
-                });
-                setAttendance(prev => ({
-                    ...prev,
-                    [student.firestoreId]: newDispensed ? "D" : "P"
-                }));
-                return;
+        setDispensedStudents(prev => {
+            const next = new Set(prev);
+            if (newDispensed) {
+                next.add(student.firestoreId);
+            } else {
+                next.delete(student.firestoreId);
             }
-
-            // Persiste no Firestore
-            await setDoc(doc(db, "students", student.firestoreId), { dispensed: newDispensed }, { merge: true });
-            student.dispensed = newDispensed;
-
-            setDispensedStudents(prev => {
-                const next = new Set(prev);
-                if (newDispensed) {
-                    next.add(student.firestoreId);
-                } else {
-                    next.delete(student.firestoreId);
-                }
-                return next;
-            });
-
-            setAttendance(prev => ({
-                ...prev,
-                [student.firestoreId]: newDispensed ? "D" : "P"
-            }));
-        } catch (err) {
-            console.error("Erro ao alterar dispensa:", err);
-            alert("Erro ao alterar dispensa médica.");
-        }
+            return next;
+        });
+        setAttendance(prev => ({
+            ...prev,
+            [student.firestoreId]: newDispensed ? "D" : "P"
+        }));
     };
 
     const toggleTR = async (student: Student) => {
@@ -500,10 +458,6 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 const { mockDb } = await import("@/lib/mockDatabase");
                 const batchRecords = students.map(s => {
                     const currentStatus = attendance[s.firestoreId];
-                    if (currentStatus !== "D" && s.dispensed) {
-                        mockDb.removeDispensation(s.firestoreId);
-                        s.dispensed = false;
-                    }
                     return {
                         studentId: s.id,
                         studentName: s.name,
@@ -540,11 +494,6 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     timestamp: serverTimestamp(),
                 });
 
-                if (currentStatus !== "D" && s.dispensed) {
-                    const studentRef = doc(db, "students", s.firestoreId);
-                    batch.update(studentRef, { dispensed: false });
-                    s.dispensed = false;
-                }
             });
 
             // Registrar Log de Auditoria no Histórico Principal
