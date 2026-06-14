@@ -20,6 +20,13 @@ export type MockAttendance = {
     teacher: string;
 };
 
+export type MockBlockedDate = {
+    date: string;
+    reason: string;
+    createdBy: string;
+    createdAt: string;
+};
+
 // 1. Roster inicial de estudantes reais (alta fidelidade extraída do Firestore de produção)
 const INITIAL_STUDENTS: MockStudent[] = [
     // --- 1°A (36 alunos) ---
@@ -109,7 +116,8 @@ const INITIAL_DISPENSED: string[] = []; // Nenhuma dispensa médica global por p
 const STORAGE_KEYS = {
     STUDENTS: "mock_students",
     ATTENDANCE: "mock_attendance",
-    DISPENSED: "mock_dispensed"
+    DISPENSED: "mock_dispensed",
+    BLOCKED_DATES: "mock_blocked_dates"
 };
 
 // Helpers para acesso ao LocalStorage com tratamento de ambiente SSR (Next.js)
@@ -152,6 +160,11 @@ export function initializeMockDatabase(forceReset = false): void {
     const attendanceExists = localStorage.getItem(STORAGE_KEYS.ATTENDANCE);
     if (!attendanceExists || forceReset) {
         setToStorage(STORAGE_KEYS.ATTENDANCE, [] as MockAttendance[]);
+    }
+
+    const blockedDatesExists = localStorage.getItem(STORAGE_KEYS.BLOCKED_DATES);
+    if (!blockedDatesExists || forceReset) {
+        setToStorage(STORAGE_KEYS.BLOCKED_DATES, [] as MockBlockedDate[]);
     }
 }
 
@@ -243,6 +256,31 @@ export const mockDb = {
         });
 
         setToStorage(STORAGE_KEYS.ATTENDANCE, records);
+    },
+
+    // DATAS BLOQUEADAS
+    getBlockedDates: (): MockBlockedDate[] => {
+        initializeMockDatabase();
+        return getFromStorage<MockBlockedDate[]>(STORAGE_KEYS.BLOCKED_DATES, []);
+    },
+
+    addBlockedDate: (blockedDate: MockBlockedDate): void => {
+        initializeMockDatabase();
+        const list = getFromStorage<MockBlockedDate[]>(STORAGE_KEYS.BLOCKED_DATES, []);
+        const index = list.findIndex(d => d.date === blockedDate.date);
+        if (index >= 0) {
+            list[index] = blockedDate;
+        } else {
+            list.push(blockedDate);
+        }
+        setToStorage(STORAGE_KEYS.BLOCKED_DATES, list);
+    },
+
+    removeBlockedDate: (date: string): void => {
+        initializeMockDatabase();
+        let list = getFromStorage<MockBlockedDate[]>(STORAGE_KEYS.BLOCKED_DATES, []);
+        list = list.filter(d => d.date !== date);
+        setToStorage(STORAGE_KEYS.BLOCKED_DATES, list);
     },
 
     clearDatabase: (): void => {

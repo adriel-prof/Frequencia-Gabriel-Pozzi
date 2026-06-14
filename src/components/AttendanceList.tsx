@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { collection, writeBatch, doc, getDoc, setDoc, serverTimestamp, deleteDoc, addDoc, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { useAuth } from "@/context/AuthContext";
+import { isWeekend } from "@/lib/calendarUtils";
 
 type Student = {
     firestoreId: string;
@@ -25,6 +26,8 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     const [dispensedStudents, setDispensedStudents] = useState<Set<string>>(new Set());
     const [isAllowed, setIsAllowed] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [blockedDates, setBlockedDates] = useState<Record<string, string>>({});
+    const [blockReason, setBlockReason] = useState<string | null>(null);
     const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [isUpdateMode, setIsUpdateMode] = useState(false);
@@ -172,6 +175,33 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
         fetchSettings();
     }, []);
 
+    // Busca as datas bloqueadas do Firebase ou mockDb
+    useEffect(() => {
+        async function fetchBlockedDates() {
+            try {
+                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                    const { mockDb } = await import("@/lib/mockDatabase");
+                    const list = mockDb.getBlockedDates();
+                    const map: Record<string, string> = {};
+                    list.forEach(item => {
+                        map[item.date] = item.reason;
+                    });
+                    setBlockedDates(map);
+                    return;
+                }
+                const snap = await getDocs(collection(db, "blocked_dates"));
+                const map: Record<string, string> = {};
+                snap.docs.forEach(docSnap => {
+                    map[docSnap.id] = docSnap.data().reason;
+                });
+                setBlockedDates(map);
+            } catch (err) {
+                console.error("Erro ao carregar datas bloqueadas:", err);
+            }
+        }
+        fetchBlockedDates();
+    }, []);
+
     const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
     // Define padrão das presenças e valida regras de horário
     useEffect(() => {
@@ -291,13 +321,26 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             const isTimeAllowed = currentStr >= timeSettings.start && currentStr <= timeSettings.end;
             const isDateAllowed = today >= LOCK_DATE;
 
-            setIsAllowed(isTimeAllowed && isDateAllowed);
+            const isDayWeekend = isWeekend(today);
+            const customReason = blockedDates[today];
+            const isDayBlocked = !!customReason;
+
+            if (isDayWeekend) {
+                setBlockReason("Fim de Semana");
+                setIsAllowed(false);
+            } else if (isDayBlocked) {
+                setBlockReason(customReason);
+                setIsAllowed(false);
+            } else {
+                setBlockReason(null);
+                setIsAllowed(isTimeAllowed && isDateAllowed);
+            }
         };
 
         checkTimeAndDate();
         const interval = setInterval(checkTimeAndDate, 60000); // Check every minute
         return () => clearInterval(interval);
-    }, [timeSettings]);
+    }, [timeSettings, blockedDates]);
 
     const handleStatusChange = (firestoreId: string, status: AttendanceStatus) => {
         if (!isAllowed) return;
@@ -447,7 +490,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     };
 
     const handleSubmit = async () => {
-        if (!isAllowed) return;
+        if (!isAllowed || blockReason) return;
         setIsSubmitting(true);
         setFeedback(null);
 
@@ -535,6 +578,13 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     return (
                         <div className="bg-amber-50 text-amber-700 p-4 rounded-xl border border-amber-200 mb-6 font-medium text-center shadow-sm">
                             Registros bloqueados para datas anteriores a 06/04/2026.
+                        </div>
+                    );
+                }
+                if (blockReason) {
+                    return (
+                        <div className="bg-red-50 text-red-700 p-4 rounded-xl border border-red-200 mb-6 font-medium text-center shadow-sm">
+                            🚫 Chamada bloqueada hoje devido a: <strong>{blockReason}</strong>.
                         </div>
                     );
                 }

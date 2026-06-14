@@ -52,6 +52,12 @@ service cloud.firestore {
       allow read: if isProf();
       allow write: if isAdmin();
     }
+
+    // Regras da coleção 'blocked_dates'
+    match /blocked_dates/{docId} {
+      allow read: if isProf();
+      allow write: if isAdmin();
+    }
     
     // Fallback retrocompatível para 'config'
     match /config/{docId} {
