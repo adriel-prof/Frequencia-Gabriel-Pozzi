@@ -34,7 +34,7 @@ export default function StudentsTransferPage() {
     const fetchStudents = async () => {
         setIsLoading(true);
         try {
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 const list = mockDb.getStudents();
                 setStudents(list);
@@ -66,7 +66,7 @@ export default function StudentsTransferPage() {
         }
 
         try {
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 const allStudents = mockDb.getStudents();
                 const foundIdx = allStudents.findIndex(s => s.firestoreId === student.firestoreId);
@@ -168,7 +168,7 @@ export default function StudentsTransferPage() {
         setFeedback(null);
 
         try {
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 mockDb.saveStudent({
                     firestoreId: transferCandidate.firestoreId,

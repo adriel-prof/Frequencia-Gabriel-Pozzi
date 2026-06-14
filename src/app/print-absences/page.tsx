@@ -27,7 +27,7 @@ function PrintAbsencesContent() {
 
         async function fetchData() {
             try {
-                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     
                     const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";

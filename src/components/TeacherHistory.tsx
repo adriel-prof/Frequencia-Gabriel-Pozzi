@@ -27,7 +27,7 @@ export function TeacherHistory() {
         async function fetchRecords() {
             setIsLoading(true);
             try {
-                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     const data = mockDb.getAttendance(filterDate) as unknown as AttendanceRecord[];
                     setRecords(data);

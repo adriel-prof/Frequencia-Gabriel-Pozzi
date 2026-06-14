@@ -43,7 +43,7 @@ export default function DashboardPage() {
     useEffect(() => {
         async function fetchClasses() {
             try {
-                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     const studentsList = mockDb.getStudents();
                     setStudents(studentsList);
@@ -73,7 +73,7 @@ export default function DashboardPage() {
         async function fetchRecords() {
             setIsLoading(true);
             try {
-                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     const data = mockDb.getAttendance(filterDate) as unknown as AttendanceRecord[];
                     setRecords(data);
@@ -119,7 +119,7 @@ export default function DashboardPage() {
         if (!confirm(`Tem certeza que deseja excluir DEFNITIVAMENTE o relatório da Turma ${cls} na data selecionada?`)) return;
 
         try {
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 const allMockAttendance = mockDb.getAttendance();
                 const dateRecordsIds = new Set(classRecords.map(r => r.id));

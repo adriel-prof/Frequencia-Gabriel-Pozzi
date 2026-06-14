@@ -48,7 +48,7 @@ export default function SettingsPage() {
 
     async function loadBlockedDates() {
         try {
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 const list = mockDb.getBlockedDates();
                 setBlockedList(list);
@@ -96,7 +96,7 @@ export default function SettingsPage() {
             const { getDatesInRange } = await import("@/lib/calendarUtils");
             const datesToBlock = getDatesInRange(blockDate, endDate);
             
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 datesToBlock.forEach(d => {
                     mockDb.addBlockedDate({
@@ -142,7 +142,7 @@ export default function SettingsPage() {
         if (!confirm(`Deseja realmente desbloquear a data ${formatDateToShow(date)}?`)) return;
         setCalendarFeedback(null);
         try {
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 mockDb.removeBlockedDate(date);
             } else {
@@ -174,7 +174,7 @@ export default function SettingsPage() {
                 });
             }
 
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 holidays.forEach(h => {
                     mockDb.addBlockedDate({

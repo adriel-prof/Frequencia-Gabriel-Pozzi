@@ -22,7 +22,7 @@ export default function UsersPage() {
 
     const fetchUsers = async () => {
         try {
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const localRoles = localStorage.getItem("mock_roles");
                 if (localRoles) {
                     setUsers(JSON.parse(localRoles));
@@ -50,7 +50,7 @@ export default function UsersPage() {
 
     const handleRoleChange = async (email: string, newRole: "admin" | "teacher") => {
         try {
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const updated = users.map(u => u.email === email ? { ...u, role: newRole } : u);
                 localStorage.setItem("mock_roles", JSON.stringify(updated));
                 setUsers(updated);
@@ -69,7 +69,7 @@ export default function UsersPage() {
         if (!deleteCandidate) return;
         setIsDeleting(true);
         try {
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const updated = users.filter(u => u.email !== deleteCandidate.email);
                 localStorage.setItem("mock_roles", JSON.stringify(updated));
                 setUsers(updated);

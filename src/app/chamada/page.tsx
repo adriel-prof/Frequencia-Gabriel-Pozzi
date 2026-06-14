@@ -36,7 +36,7 @@ export default function ChamadaPage() {
         async function fetchStudents() {
             if (!user) return;
             try {
-                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     const fetchedStudents = mockDb.getStudents();
                     fetchedStudents.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
@@ -68,7 +68,7 @@ export default function ChamadaPage() {
         if (!newClassName || newClassName.trim() === oldClassName || newClassName.trim() === "") return;
 
         try {
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 const students = mockDb.getStudents();
                 students.forEach(s => {

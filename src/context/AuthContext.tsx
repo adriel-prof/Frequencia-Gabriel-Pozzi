@@ -37,7 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
         }
 
-        if (typeof window !== "undefined" && window.location.hostname === "localhost" && sessionStorage.getItem("mock_user")) {
+        if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && sessionStorage.getItem("mock_user")) {
             try {
                 const mock = JSON.parse(sessionStorage.getItem("mock_user") || "{}");
                 setRole(mock.role);
@@ -102,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const signIn = async () => {
         setError(null);
-        if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+        if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
             const mock = {
                 user: {
                     email: "adrielsilva@prof.educacao.sp.gov.br",
@@ -126,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const logout = async () => {
-        if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+        if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
             sessionStorage.removeItem("mock_user");
             setUser(null);
             setRole(null);

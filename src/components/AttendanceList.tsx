@@ -55,7 +55,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
         if (role !== "admin") return;
         async function fetchAllStudents() {
             try {
-                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     setAllStudentsList(mockDb.getStudents());
                     return;
@@ -114,7 +114,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
 
         setIsTransferSaving(true);
         try {
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 mockDb.saveStudent({
                     firestoreId: transferCandidate.firestoreId,
@@ -153,7 +153,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     useEffect(() => {
         async function fetchSettings() {
             try {
-                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     setTimeSettings({
                         start: "00:00", // Permite chamadas a qualquer hora no localhost
                         end: "23:59"
@@ -179,7 +179,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     useEffect(() => {
         async function fetchBlockedDates() {
             try {
-                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     const list = mockDb.getBlockedDates();
                     const map: Record<string, string> = {};
@@ -212,7 +212,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             try {
                 const today = new Date().toISOString().split("T")[0];
 
-                if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+                if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     const localRecords = mockDb.getAttendance(today);
                     
@@ -370,7 +370,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             return;
         }
         try {
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 const allStudents = mockDb.getStudents();
                 const foundIdx = allStudents.findIndex(s => s.firestoreId === student.firestoreId);
@@ -396,7 +396,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
         if (!deleteCandidate) return;
         setIsDeletingStudent(true);
         try {
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 mockDb.deleteStudent(deleteCandidate.id);
                 window.location.reload();
@@ -429,7 +429,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 class: studentClass
             }].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 
                 // No banco local, atualizamos os IDs de todos os alunos da turma
@@ -497,7 +497,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
         try {
             const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
             
-            if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 const batchRecords = students.map(s => {
                     const currentStatus = attendance[s.firestoreId];
