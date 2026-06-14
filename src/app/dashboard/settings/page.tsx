@@ -129,9 +129,10 @@ export default function SettingsPage() {
                     : `Período de ${formatDateToShow(blockDate)} até ${formatDateToShow(endDate)} bloqueado com sucesso (${datesToBlock.length} dias)!`
             });
             loadBlockedDates();
-        } catch (error) {
+        } catch (error: unknown) {
             console.error(error);
-            setCalendarFeedback({ type: "error", msg: "Falha ao bloquear o período." });
+            const errMsg = error instanceof Error ? error.message : String(error);
+            setCalendarFeedback({ type: "error", msg: `Falha ao bloquear o período: ${errMsg}` });
         } finally {
             setIsSavingBlock(false);
         }
@@ -149,9 +150,10 @@ export default function SettingsPage() {
             }
             setCalendarFeedback({ type: "success", msg: `Data ${formatDateToShow(date)} desbloqueada com sucesso!` });
             loadBlockedDates();
-        } catch (error) {
+        } catch (error: unknown) {
             console.error(error);
-            setCalendarFeedback({ type: "error", msg: "Falha ao desbloquear a data." });
+            const errMsg = error instanceof Error ? error.message : String(error);
+            setCalendarFeedback({ type: "error", msg: `Falha ao desbloquear a data: ${errMsg}` });
         }
     };
 
@@ -197,9 +199,10 @@ export default function SettingsPage() {
 
             setCalendarFeedback({ type: "success", msg: `${holidays.length} feriados importados para o ano de ${currentYear}!` });
             loadBlockedDates();
-        } catch (error) {
-            console.error(error);
-            setCalendarFeedback({ type: "error", msg: "Falha ao importar feriados da BrasilAPI. Tente novamente." });
+        } catch (error: unknown) {
+            console.error("Erro completo na importação de feriados:", error);
+            const errMsg = error instanceof Error ? error.message : String(error);
+            setCalendarFeedback({ type: "error", msg: `Falha ao importar feriados da BrasilAPI: ${errMsg}` });
         } finally {
             setIsImporting(false);
         }
