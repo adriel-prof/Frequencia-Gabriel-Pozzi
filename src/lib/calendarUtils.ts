@@ -22,14 +22,37 @@ export function isWeekend(dateString: string): boolean {
 }
 
 /**
- * Busca feriados nacionais utilizando a BrasilAPI.
+ * Retorna todas as datas no formato YYYY-MM-DD entre a data de início e de fim, inclusive.
+ */
+export function getDatesInRange(startDateStr: string, endDateStr: string): string[] {
+    const dates: string[] = [];
+    const startParts = startDateStr.split('-');
+    const endParts = endDateStr.split('-');
+    if (startParts.length !== 3 || endParts.length !== 3) return [startDateStr];
+
+    const start = new Date(Number(startParts[0]), Number(startParts[1]) - 1, Number(startParts[2]));
+    const end = new Date(Number(endParts[0]), Number(endParts[1]) - 1, Number(endParts[2]));
+
+    const current = new Date(start);
+    while (current <= end) {
+        const yyyy = current.getFullYear();
+        const mm = String(current.getMonth() + 1).padStart(2, '0');
+        const dd = String(current.getDate()).padStart(2, '0');
+        dates.push(`${yyyy}-${mm}-${dd}`);
+        current.setDate(current.getDate() + 1);
+    }
+    return dates;
+}
+
+/**
+ * Busca feriados nacionais utilizando a BrasilAPI (via proxy local para evitar CORS).
  * @param year Ano corrente
  */
 export async function fetchBrasilAPIHolidays(year: number): Promise<{ date: string; name: string }[]> {
     try {
-        const response = await fetch(`https://brasilapi.com.br/api/feriados/v1/${year}`);
+        const response = await fetch(`/api/feriados?year=${year}`);
         if (!response.ok) {
-            throw new Error(`Falha ao buscar feriados da BrasilAPI: ${response.statusText}`);
+            throw new Error(`Falha ao buscar feriados da BrasilAPI via proxy: ${response.statusText}`);
         }
         const data = await response.json();
         return data.map((h: { date: string; name: string }) => ({
@@ -41,3 +64,4 @@ export async function fetchBrasilAPIHolidays(year: number): Promise<{ date: stri
         throw error;
     }
 }
+

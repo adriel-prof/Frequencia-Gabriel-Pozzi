@@ -22,6 +22,7 @@ export default function SettingsPage() {
     // States for Calendar Blocking
     const [blockedList, setBlockedList] = useState<BlockedDate[]>([]);
     const [blockDate, setBlockDate] = useState("");
+    const [blockEndDate, setBlockEndDate] = useState("");
     const [blockReason, setBlockReason] = useState("");
     const [isSavingBlock, setIsSavingBlock] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
@@ -90,30 +91,47 @@ export default function SettingsPage() {
         setCalendarFeedback(null);
         try {
             const createdBy = user?.email || "admin@prof.educacao.sp.gov.br";
+            const endDate = blockEndDate || blockDate;
+
+            const { getDatesInRange } = await import("@/lib/calendarUtils");
+            const datesToBlock = getDatesInRange(blockDate, endDate);
             
             if (typeof window !== "undefined" && window.location.hostname === "localhost") {
                 const { mockDb } = await import("@/lib/mockDatabase");
-                mockDb.addBlockedDate({
-                    date: blockDate,
-                    reason: blockReason,
-                    createdBy,
-                    createdAt: new Date().toISOString()
+                datesToBlock.forEach(d => {
+                    mockDb.addBlockedDate({
+                        date: d,
+                        reason: blockReason,
+                        createdBy,
+                        createdAt: new Date().toISOString()
+                    });
                 });
             } else {
-                await setDoc(doc(db, "blocked_dates", blockDate), {
-                    reason: blockReason,
-                    createdBy,
-                    createdAt: new Date().toISOString()
+                const batch = writeBatch(db);
+                datesToBlock.forEach(d => {
+                    const docRef = doc(db, "blocked_dates", d);
+                    batch.set(docRef, {
+                        reason: blockReason,
+                        createdBy,
+                        createdAt: new Date().toISOString()
+                    });
                 });
+                await batch.commit();
             }
 
             setBlockDate("");
+            setBlockEndDate("");
             setBlockReason("");
-            setCalendarFeedback({ type: "success", msg: `Data ${formatDateToShow(blockDate)} bloqueada com sucesso!` });
+            setCalendarFeedback({ 
+                type: "success", 
+                msg: datesToBlock.length === 1
+                    ? `Data ${formatDateToShow(blockDate)} bloqueada com sucesso!`
+                    : `Período de ${formatDateToShow(blockDate)} até ${formatDateToShow(endDate)} bloqueado com sucesso (${datesToBlock.length} dias)!`
+            });
             loadBlockedDates();
         } catch (error) {
             console.error(error);
-            setCalendarFeedback({ type: "error", msg: "Falha ao bloquear a data." });
+            setCalendarFeedback({ type: "error", msg: "Falha ao bloquear o período." });
         } finally {
             setIsSavingBlock(false);
         }
@@ -270,18 +288,33 @@ export default function SettingsPage() {
                     </div>
                 )}
 
-                {/* Formulário para bloquear data */}
+                {/* Formulário para bloquear período */}
                 <form onSubmit={handleAddBlockedDate} className="space-y-4 bg-gray-50 p-4 rounded-2xl border border-gray-100 mb-6">
-                    <h3 className="font-bold text-gray-800 text-sm">Bloquear Nova Data</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <h3 className="font-bold text-gray-800 text-sm">Bloquear Período ou Data</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="space-y-1">
-                            <label className="block text-xs font-bold text-gray-500 uppercase">Data</label>
+                            <label className="block text-xs font-bold text-gray-500 uppercase">Data de Início</label>
                             <input
                                 type="date"
                                 required
                                 value={blockDate}
-                                onChange={e => setBlockDate(e.target.value)}
+                                onChange={e => {
+                                    setBlockDate(e.target.value);
+                                    if (!blockEndDate || blockEndDate < e.target.value) {
+                                        setBlockEndDate(e.target.value);
+                                    }
+                                }}
                                 className="w-full border border-gray-300 rounded-xl px-4 py-2 text-sm text-gray-900 bg-white"
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="block text-xs font-bold text-gray-500 uppercase">Data de Fim (Opcional)</label>
+                            <input
+                                type="date"
+                                value={blockEndDate}
+                                onChange={e => setBlockEndDate(e.target.value)}
+                                className="w-full border border-gray-300 rounded-xl px-4 py-2 text-sm text-gray-900 bg-white"
+                                min={blockDate}
                             />
                         </div>
                         <div className="space-y-1">
@@ -289,7 +322,7 @@ export default function SettingsPage() {
                             <input
                                 type="text"
                                 required
-                                placeholder="Ex: Conselho de Classe, Recesso..."
+                                placeholder="Ex: Férias, Recesso, Feriado..."
                                 value={blockReason}
                                 onChange={e => setBlockReason(e.target.value)}
                                 className="w-full border border-gray-300 rounded-xl px-4 py-2 text-sm text-gray-900 bg-white"
@@ -301,7 +334,7 @@ export default function SettingsPage() {
                         disabled={isSavingBlock}
                         className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition-colors disabled:opacity-50"
                     >
-                        {isSavingBlock ? "Salvando..." : "Bloquear Data"}
+                        {isSavingBlock ? "Salvando..." : "Bloquear Datas"}
                     </button>
                 </form>
 
