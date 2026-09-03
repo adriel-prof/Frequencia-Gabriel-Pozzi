@@ -164,6 +164,14 @@ export default function DashboardPage() {
 
                 <div className="flex flex-col sm:flex-row items-center gap-3 border-t md:border-t-0 md:border-l border-gray-100 md:pl-4 pt-4 md:pt-0">
                     <button
+                        onClick={() => window.open(`/almoco?date=${filterDate}`, '_blank')}
+                        className="bg-white border-2 border-amber-500 text-amber-700 font-bold px-4 py-2 rounded-lg hover:bg-amber-50 transition-colors flex items-center gap-2 whitespace-nowrap shadow-sm w-full sm:w-auto justify-center"
+                    >
+                        <span className="text-lg">🍽️</span>
+                        Saída Almoço
+                    </button>
+
+                    <button
                         onClick={() => window.open(`/print?date=${filterDate}`, '_blank')}
                         className="bg-white border-2 border-green-500 text-green-700 font-bold px-4 py-2 rounded-lg hover:bg-green-50 transition-colors flex items-center gap-2 whitespace-nowrap shadow-sm w-full sm:w-auto justify-center"
                     >
