@@ -500,7 +500,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 const batchRecords = students.map(s => {
-                    const currentStatus = attendance[s.firestoreId];
+                    const currentStatus = attendance[s.firestoreId] || "P";
                     return {
                         studentId: s.id,
                         studentName: s.name,
@@ -512,6 +512,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     };
                 });
                 mockDb.saveAttendanceBatch(batchRecords);
+                setIsUpdateMode(true);
                 setShowSuccessModal(true);
                 setFeedback(null);
                 return;
@@ -524,7 +525,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 // Ao criar um ID com base na data + aluno, garantimos a sobrescrita (merge)
                 const docId = `att_${s.firestoreId}_${dateKey}`;
                 const docRef = doc(db, "attendance", docId);
-                const currentStatus = attendance[s.firestoreId];
+                const currentStatus = attendance[s.firestoreId] || "P";
 
                 batch.set(docRef, {
                     studentId: s.id,
@@ -533,10 +534,16 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     studentFirestoreId: s.firestoreId,
                     date: today,
                     status: currentStatus,
-                    teacher: user?.email,
+                    teacher: user?.email || "professor",
                     timestamp: serverTimestamp(),
                 });
 
+            });
+
+            // Clean snapshot for history log to prevent undefined fields
+            const sanitizedSnapshot: Record<string, AttendanceStatus> = {};
+            students.forEach(s => {
+                sanitizedSnapshot[s.firestoreId] = attendance[s.firestoreId] || "P";
             });
 
             // Registrar Log de Auditoria no Histórico Principal
@@ -545,12 +552,13 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 action: isUpdateMode ? "UPDATE" : "CREATE",
                 date: today,
                 studentClass: normalizeClassName(students[0]?.class),
-                teacher: user?.email,
+                teacher: user?.email || "professor",
                 timestamp: serverTimestamp(),
-                snapshot: attendance 
+                snapshot: sanitizedSnapshot 
             });
 
             await batch.commit();
+            setIsUpdateMode(true);
 
             // Dispara os e-mails em segundo plano (sem travar a tela)
             const queryParams = user?.email ? `loggedUserEmail=${encodeURIComponent(user.email)}` : '';
@@ -562,8 +570,9 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             setShowSuccessModal(true);
             setFeedback(null);
         } catch (err: unknown) {
-            console.error(err);
-            setFeedback({ type: "error", msg: "Erro ao enviar a chamada. Tente novamente." });
+            console.error("Erro ao salvar/atualizar chamada:", err);
+            const errorMsg = err instanceof Error ? err.message : "Erro desconhecido";
+            setFeedback({ type: "error", msg: `Erro ao enviar/atualizar a chamada: ${errorMsg}` });
         } finally {
             setIsSubmitting(false);
         }
@@ -763,9 +772,13 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                             </svg>
                         </div>
                         <div>
-                            <h3 className="text-2xl font-extrabold text-gray-900 tracking-tight">Chamada Finalizada</h3>
+                            <h3 className="text-2xl font-extrabold text-gray-900 tracking-tight">
+                                {isUpdateMode ? "Chamada Atualizada" : "Chamada Finalizada"}
+                            </h3>
                             <p className="text-gray-500 mt-2 text-sm leading-relaxed">
-                                Os registros foram salvos no banco de dados e o relatório foi enviado com sucesso à coordenação!
+                                {isUpdateMode
+                                    ? "Os registros de presença foram atualizados com sucesso no banco de dados!"
+                                    : "Os registros foram salvos no banco de dados e o relatório foi enviado com sucesso à coordenação!"}
                             </p>
                         </div>
                         <div>

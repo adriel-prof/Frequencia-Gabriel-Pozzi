@@ -37,8 +37,8 @@ service cloud.firestore {
     // Regras da coleção 'attendance'
     match /attendance/{docId} {
       allow read: if isProf();
-      allow create: if isProf(); // Permite criar a chamada
-      allow update, delete: if isAdmin(); // Administradores podem gerenciar/atualizar
+      allow create, update: if isProf(); // Permite criar e atualizar a chamada (ex: aluno atrasado)
+      allow delete: if isAdmin(); // Apenas Administradores podem deletar
     }
 
     // Regras da coleção 'attendance_history'
