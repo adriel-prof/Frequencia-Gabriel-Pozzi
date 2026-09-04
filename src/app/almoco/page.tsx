@@ -35,10 +35,6 @@ function AlmocoContent() {
     const [timeSlot1, setTimeSlot1] = useState("12h05");
     const [timeSlot2, setTimeSlot2] = useState("12h10");
     const [timeSlot3, setTimeSlot3] = useState("12h15");
-    
-    // Limiares de porcentagem
-    const [threshSlot1, setThreshSlot1] = useState(90);
-    const [threshSlot2, setThreshSlot2] = useState(60);
 
     const [customMessage, setCustomMessage] = useState<string>("");
     const [copied, setCopied] = useState(false);
@@ -91,7 +87,7 @@ function AlmocoContent() {
                         return { className: formatClassName(cls), percentage, rawClass: cls };
                     });
 
-                    result.sort((a, b) => b.percentage - a.percentage);
+                    result.sort((a, b) => b.percentage - a.percentage || a.className.localeCompare(b.className, "pt-BR", { numeric: true, sensitivity: 'base' }));
 
                     const allClasses = Array.from(new Set(studentsList.map(s => normalizeClassName(s.class))));
                     const missing = allClasses
@@ -149,7 +145,7 @@ function AlmocoContent() {
                     return { className: formatClassName(cls), percentage, rawClass: cls };
                 });
 
-                result.sort((a, b) => b.percentage - a.percentage);
+                result.sort((a, b) => b.percentage - a.percentage || a.className.localeCompare(b.className, "pt-BR", { numeric: true, sensitivity: 'base' }));
 
                 const allClasses = Array.from(new Set(studentsList.map(s => normalizeClassName(s.class))));
                 const missing = allClasses
@@ -179,20 +175,26 @@ function AlmocoContent() {
         const [, month, day] = selectedDate.split("-");
         const formattedDate = `${day}/${month}`;
 
-        // Distribuição das turmas nos horários
+        // Distribuição das turmas nos horários:
+        // - Somente a sala com maior porcentagem sai no 1º horário (12h05)
+        // - Somente a sala com menor porcentagem sai no 3º horário (12h15)
+        // - As demais ficam no horário intermediário (12h10)
         const slot1: ClassStat[] = [];
         const slot2: ClassStat[] = [];
         const slot3: ClassStat[] = [];
 
-        classStats.forEach((item, index) => {
-            if (item.percentage >= threshSlot1 || (index === 0 && classStats[0].percentage < threshSlot1)) {
-                slot1.push(item);
-            } else if (item.percentage >= threshSlot2) {
-                slot2.push(item);
-            } else {
-                slot3.push(item);
+        if (classStats.length === 1) {
+            slot1.push(classStats[0]);
+        } else if (classStats.length === 2) {
+            slot1.push(classStats[0]);
+            slot3.push(classStats[1]);
+        } else if (classStats.length >= 3) {
+            slot1.push(classStats[0]);
+            for (let i = 1; i < classStats.length - 1; i++) {
+                slot2.push(classStats[i]);
             }
-        });
+            slot3.push(classStats[classStats.length - 1]);
+        }
 
         let msg = `🍽️✨ SAÍDA PARA O ALMOÇO – ${formattedDate} ✨🍽️\n\n`;
         msg += `Pessoal, atenção aos horários de saída para o almoço! 💙\n\n`;
@@ -224,7 +226,7 @@ function AlmocoContent() {
         msg += `Professores, por gentileza acompanhem os estudantes até  a fila do refeitório. Obrigada 🌹`;
 
         setCustomMessage(msg);
-    }, [classStats, selectedDate, timeSlot1, timeSlot2, timeSlot3, threshSlot1, threshSlot2]);
+    }, [classStats, selectedDate, timeSlot1, timeSlot2, timeSlot3]);
 
     const handleCopy = async () => {
         try {
@@ -329,59 +331,31 @@ function AlmocoContent() {
                             <div className="space-y-3">
                                 <div>
                                     <label className="block text-xs font-bold text-gray-600 mb-1">
-                                        1º Horário (Ex: 12h05)
+                                        1º Horário (Maior Porcentagem)
                                     </label>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={timeSlot1}
-                                            onChange={e => setTimeSlot1(e.target.value)}
-                                            className="flex-1 px-3 py-2 border border-gray-200 rounded-xl font-bold text-gray-800 text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-amber-500"
-                                        />
-                                        <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 px-2 rounded-xl text-xs font-bold">
-                                            <span>&ge;</span>
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                max="100"
-                                                value={threshSlot1}
-                                                onChange={e => setThreshSlot1(Number(e.target.value))}
-                                                className="w-8 bg-transparent text-center font-bold text-amber-700 outline-none"
-                                            />
-                                            <span>%</span>
-                                        </div>
-                                    </div>
+                                    <input
+                                        type="text"
+                                        value={timeSlot1}
+                                        onChange={e => setTimeSlot1(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold text-gray-800 text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-amber-500"
+                                    />
                                 </div>
 
                                 <div>
                                     <label className="block text-xs font-bold text-gray-600 mb-1">
-                                        2º Horário (Ex: 12h10)
+                                        2º Horário (Intermediário)
                                     </label>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={timeSlot2}
-                                            onChange={e => setTimeSlot2(e.target.value)}
-                                            className="flex-1 px-3 py-2 border border-gray-200 rounded-xl font-bold text-gray-800 text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-amber-500"
-                                        />
-                                        <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 px-2 rounded-xl text-xs font-bold">
-                                            <span>&ge;</span>
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                max="100"
-                                                value={threshSlot2}
-                                                onChange={e => setThreshSlot2(Number(e.target.value))}
-                                                className="w-8 bg-transparent text-center font-bold text-amber-700 outline-none"
-                                            />
-                                            <span>%</span>
-                                        </div>
-                                    </div>
+                                    <input
+                                        type="text"
+                                        value={timeSlot2}
+                                        onChange={e => setTimeSlot2(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold text-gray-800 text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-amber-500"
+                                    />
                                 </div>
 
                                 <div>
                                     <label className="block text-xs font-bold text-gray-600 mb-1">
-                                        3º Horário (Ex: 12h15)
+                                        3º Horário (Menor Porcentagem)
                                     </label>
                                     <input
                                         type="text"
@@ -395,14 +369,31 @@ function AlmocoContent() {
                             <div className="pt-2 border-t border-gray-100">
                                 <h3 className="text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-2">Resumo das Turmas</h3>
                                 <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                                    {classStats.map(c => (
-                                        <div key={c.rawClass} className="flex justify-between items-center text-xs py-1 px-2.5 bg-gray-50 rounded-lg">
-                                            <span className="font-bold text-gray-800">Turma {c.className}</span>
-                                            <span className={`font-black ${c.percentage >= 90 ? 'text-green-600' : c.percentage >= 75 ? 'text-amber-600' : 'text-red-600'}`}>
-                                                {c.percentage}%
-                                            </span>
-                                        </div>
-                                    ))}
+                                    {classStats.map((c, idx) => {
+                                        let slotLabel = timeSlot2;
+                                        let badgeColor = "bg-amber-100 text-amber-800";
+                                        if (idx === 0) {
+                                            slotLabel = timeSlot1;
+                                            badgeColor = "bg-green-100 text-green-800";
+                                        } else if (idx === classStats.length - 1 && classStats.length > 1) {
+                                            slotLabel = timeSlot3;
+                                            badgeColor = "bg-red-100 text-red-800";
+                                        }
+
+                                        return (
+                                            <div key={c.rawClass} className="flex justify-between items-center text-xs py-1.5 px-2.5 bg-gray-50 rounded-lg">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="font-bold text-gray-800">Turma {c.className}</span>
+                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${badgeColor}`}>
+                                                        {slotLabel}
+                                                    </span>
+                                                </div>
+                                                <span className={`font-black ${idx === 0 ? 'text-green-600' : idx === classStats.length - 1 && classStats.length > 1 ? 'text-red-600' : 'text-amber-600'}`}>
+                                                    {c.percentage}%
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
