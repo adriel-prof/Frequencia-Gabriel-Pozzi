@@ -19,6 +19,47 @@ type ClassStat = {
     rawClass: string;
 };
 
+function getClassSlots(classStats: ClassStat[]) {
+    const slot1: ClassStat[] = [];
+    const slot2: ClassStat[] = [];
+    const slot3: ClassStat[] = [];
+
+    if (classStats.length === 0) {
+        return { slot1, slot2, slot3 };
+    }
+
+    const hundreds = classStats.filter(c => c.percentage === 100);
+
+    // Se houver 2 ou mais turmas com 100% de frequência, todas as turmas 100% vão para o 1º horário (12h05)
+    if (hundreds.length >= 2) {
+        slot1.push(...hundreds);
+        const others = classStats.filter(c => c.percentage < 100);
+        if (others.length === 1) {
+            slot3.push(others[0]);
+        } else if (others.length >= 2) {
+            for (let i = 0; i < others.length - 1; i++) {
+                slot2.push(others[i]);
+            }
+            slot3.push(others[others.length - 1]);
+        }
+    } else {
+        if (classStats.length === 1) {
+            slot1.push(classStats[0]);
+        } else if (classStats.length === 2) {
+            slot1.push(classStats[0]);
+            slot3.push(classStats[1]);
+        } else if (classStats.length >= 3) {
+            slot1.push(classStats[0]);
+            for (let i = 1; i < classStats.length - 1; i++) {
+                slot2.push(classStats[i]);
+            }
+            slot3.push(classStats[classStats.length - 1]);
+        }
+    }
+
+    return { slot1, slot2, slot3 };
+}
+
 function AlmocoContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -175,26 +216,7 @@ function AlmocoContent() {
         const [, month, day] = selectedDate.split("-");
         const formattedDate = `${day}/${month}`;
 
-        // Distribuição das turmas nos horários:
-        // - Somente a sala com maior porcentagem sai no 1º horário (12h05)
-        // - Somente a sala com menor porcentagem sai no 3º horário (12h15)
-        // - As demais ficam no horário intermediário (12h10)
-        const slot1: ClassStat[] = [];
-        const slot2: ClassStat[] = [];
-        const slot3: ClassStat[] = [];
-
-        if (classStats.length === 1) {
-            slot1.push(classStats[0]);
-        } else if (classStats.length === 2) {
-            slot1.push(classStats[0]);
-            slot3.push(classStats[1]);
-        } else if (classStats.length >= 3) {
-            slot1.push(classStats[0]);
-            for (let i = 1; i < classStats.length - 1; i++) {
-                slot2.push(classStats[i]);
-            }
-            slot3.push(classStats[classStats.length - 1]);
-        }
+        const { slot1, slot2, slot3 } = getClassSlots(classStats);
 
         let msg = `🍽️✨ SAÍDA PARA O ALMOÇO – ${formattedDate} ✨🍽️\n\n`;
         msg += `Pessoal, atenção aos horários de saída para o almoço! 💙\n\n`;
@@ -369,31 +391,38 @@ function AlmocoContent() {
                             <div className="pt-2 border-t border-gray-100">
                                 <h3 className="text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-2">Resumo das Turmas</h3>
                                 <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                                    {classStats.map((c, idx) => {
-                                        let slotLabel = timeSlot2;
-                                        let badgeColor = "bg-amber-100 text-amber-800";
-                                        if (idx === 0) {
-                                            slotLabel = timeSlot1;
-                                            badgeColor = "bg-green-100 text-green-800";
-                                        } else if (idx === classStats.length - 1 && classStats.length > 1) {
-                                            slotLabel = timeSlot3;
-                                            badgeColor = "bg-red-100 text-red-800";
-                                        }
+                                    {(() => {
+                                        const { slot1, slot3 } = getClassSlots(classStats);
+                                        return classStats.map((c) => {
+                                            let slotLabel = timeSlot2;
+                                            let badgeColor = "bg-amber-100 text-amber-800";
+                                            let textColor = "text-amber-600";
 
-                                        return (
-                                            <div key={c.rawClass} className="flex justify-between items-center text-xs py-1.5 px-2.5 bg-gray-50 rounded-lg">
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="font-bold text-gray-800">Turma {c.className}</span>
-                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${badgeColor}`}>
-                                                        {slotLabel}
+                                            if (slot1.some(s => s.rawClass === c.rawClass)) {
+                                                slotLabel = timeSlot1;
+                                                badgeColor = "bg-green-100 text-green-800";
+                                                textColor = "text-green-600";
+                                            } else if (slot3.some(s => s.rawClass === c.rawClass)) {
+                                                slotLabel = timeSlot3;
+                                                badgeColor = "bg-red-100 text-red-800";
+                                                textColor = "text-red-600";
+                                            }
+
+                                            return (
+                                                <div key={c.rawClass} className="flex justify-between items-center text-xs py-1.5 px-2.5 bg-gray-50 rounded-lg">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="font-bold text-gray-800">Turma {c.className}</span>
+                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${badgeColor}`}>
+                                                            {slotLabel}
+                                                        </span>
+                                                    </div>
+                                                    <span className={`font-black ${textColor}`}>
+                                                        {c.percentage}%
                                                     </span>
                                                 </div>
-                                                <span className={`font-black ${idx === 0 ? 'text-green-600' : idx === classStats.length - 1 && classStats.length > 1 ? 'text-red-600' : 'text-amber-600'}`}>
-                                                    {c.percentage}%
-                                                </span>
-                                            </div>
-                                        );
-                                    })}
+                                            );
+                                        });
+                                    })()}
                                 </div>
                             </div>
                         </div>
