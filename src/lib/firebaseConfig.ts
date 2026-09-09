@@ -1,6 +1,12 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  memoryLocalCache
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.replace(/['"]/g, '').trim(),
@@ -16,9 +22,18 @@ let auth: ReturnType<typeof getAuth>;
 let db: ReturnType<typeof getFirestore>;
 
 try {
-  app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+  const isExisting = getApps().length > 0;
+  app = isExisting ? getApps()[0] : initializeApp(firebaseConfig);
   auth = getAuth(app);
-  db = getFirestore(app);
+  if (!isExisting) {
+    db = initializeFirestore(app, {
+      localCache: typeof window !== "undefined"
+        ? persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+        : memoryLocalCache()
+    });
+  } else {
+    db = getFirestore(app);
+  }
 } catch (error) {
   console.warn("Firebase initialization skipped during build or failed due to invalid keys:", error);
   auth = {} as ReturnType<typeof getAuth>;

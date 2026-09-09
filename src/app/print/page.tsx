@@ -6,6 +6,8 @@ import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { Suspense } from "react";
 
+import { useStudents } from "@/context/StudentsContext";
+
 type AttendanceRecord = {
     studentClass: string;
     status: "P" | "F" | "D" | "A" | "TR";
@@ -16,6 +18,7 @@ type AttendanceRecord = {
 function PrintContent() {
     const searchParams = useSearchParams();
     const date = searchParams.get("date");
+    const { students: globalStudents, loading: studentsLoading } = useStudents();
     const [classData, setClassData] = useState<{ className: string; percentage: number }[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -23,13 +26,16 @@ function PrintContent() {
         if (!date) return;
 
         async function fetchData() {
+            if (studentsLoading) return;
+            setLoading(true);
             try {
+                const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
+
                 if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     const studentsList = mockDb.getStudents().filter(s => s.status !== "TR");
                     const recordsData = mockDb.getAttendance(date || undefined) as unknown as AttendanceRecord[];
                     
-                    const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
                     const stats: Record<string, { p: number; f: number }> = {};
                     const activeClasses = Array.from(new Set(recordsData.map(r => normalizeClassName(r.studentClass))));
 
@@ -62,22 +68,32 @@ function PrintContent() {
                     return;
                 }
 
-                // Busca alunos atuais
-                const studentsSnap = await getDocs(collection(db, "students"));
-                const studentsList = studentsSnap.docs
-                    .filter(doc => doc.data().status !== "TR")
-                    .map(doc => ({
-                        firestoreId: doc.id,
-                        name: doc.data().name as string,
-                        class: doc.data().class as string
-                    }));
+                // 1. Tenta buscar da coleção otimizada daily_summaries
+                const summaryQuery = query(collection(db, "daily_summaries"), where("date", "==", date));
+                const summarySnap = await getDocs(summaryQuery);
+
+                if (!summarySnap.empty) {
+                    const result = summarySnap.docs.map(docSnap => {
+                        const d = docSnap.data();
+                        return {
+                            className: normalizeClassName(d.className),
+                            percentage: d.presentPercentage ?? 0
+                        };
+                    });
+                    result.sort((a, b) => a.className.localeCompare(b.className, undefined, { numeric: true, sensitivity: 'base' }));
+                    setClassData(result);
+                    setLoading(false);
+                    return;
+                }
+
+                // 2. Fallback para calculo legado se nao houver daily_summaries para essa data
+                const studentsList = globalStudents.filter(s => s.status !== "TR");
 
                 // Busca registros de chamada
                 const q = query(collection(db, "attendance"), where("date", "==", date));
                 const snapshot = await getDocs(q);
                 const recordsData = snapshot.docs.map(doc => doc.data() as AttendanceRecord);
 
-                const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
                 const stats: Record<string, { p: number; f: number }> = {};
                 
                 // Apenas turmas que possuem alguma chamada lançada no dia entram no placar impresso
@@ -121,7 +137,7 @@ function PrintContent() {
         }
 
         fetchData();
-    }, [date]);
+    }, [date, globalStudents, studentsLoading]);
 
     if (!date) {
         return <div className="p-8 text-center text-red-500 font-bold">Data não especificada na URL.</div>;

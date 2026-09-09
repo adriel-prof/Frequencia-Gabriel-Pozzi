@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { collection, writeBatch, doc, getDoc, setDoc, serverTimestamp, deleteDoc, addDoc, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { useAuth } from "@/context/AuthContext";
+import { useStudents } from "@/context/StudentsContext";
 import { isWeekend } from "@/lib/calendarUtils";
 
 type Student = {
@@ -22,6 +23,7 @@ const LOCK_DATE = "2026-04-06";
 
 export function AttendanceList({ students, onSuccess }: { students: Student[], onSuccess?: () => void }) {
     const { user, role } = useAuth();
+    const { students: globalStudents, refreshStudents } = useStudents();
     const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
     const [dispensedStudents, setDispensedStudents] = useState<Set<string>>(new Set());
     const [isAllowed, setIsAllowed] = useState(false);
@@ -46,35 +48,11 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     const [transferCustomClass, setTransferCustomClass] = useState("");
     const [transferNewNumber, setTransferNewNumber] = useState<number>(1);
     const [isTransferSaving, setIsTransferSaving] = useState(false);
-    const [allStudentsList, setAllStudentsList] = useState<Student[]>([]);
 
     const [timeSettings, setTimeSettings] = useState({ start: "08:40", end: "23:59" });
 
-    // Fetch all students to support transfer/remanejamento suggestions
-    useEffect(() => {
-        if (role !== "admin") return;
-        async function fetchAllStudents() {
-            try {
-                if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
-                    const { mockDb } = await import("@/lib/mockDatabase");
-                    setAllStudentsList(mockDb.getStudents());
-                    return;
-                }
-                const snap = await getDocs(collection(db, "students"));
-                const list = snap.docs.map(d => ({
-                    firestoreId: d.id,
-                    name: d.data().name as string,
-                    class: d.data().class as string,
-                    id: Number(d.data().id),
-                    status: d.data().status as string
-                })) as Student[];
-                setAllStudentsList(list);
-            } catch (err) {
-                console.error("Erro ao buscar lista de alunos no painel de chamada:", err);
-            }
-        }
-        fetchAllStudents();
-    }, [role]);
+    // Reutilizar lista global de estudantes do context sem chamadas redundantes ao banco
+    const allStudentsList = role === "admin" ? globalStudents : [];
 
     // Recalcular número sugerido para transferência
     useEffect(() => {
@@ -385,6 +363,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
 
             await setDoc(doc(db, "students", student.firestoreId), { status: newTR ? "TR" : "" }, { merge: true });
             student.status = newTR ? "TR" : "";
+            await refreshStudents();
             window.location.reload();
         } catch (err) {
             console.error("Erro ao alterar status TR:", err);
@@ -399,11 +378,13 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 mockDb.deleteStudent(deleteCandidate.id);
+                await refreshStudents();
                 window.location.reload();
                 return;
             }
 
             await deleteDoc(doc(db, "students", deleteCandidate.id));
+            await refreshStudents();
             window.location.reload(); // Vai recarregar a tela para puxar dados atualizados do banco
         } catch (err) {
             console.error("Erro ao excluir aluno:", err);
@@ -452,6 +433,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     }
                 }
                 
+                await refreshStudents();
                 window.location.reload();
                 return;
             }
@@ -478,6 +460,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             }
 
             await batch.commit();
+            await refreshStudents();
             window.location.reload(); // Recarrega tela para ver o aluno adicionado
         } catch (err) {
             console.error(err);
@@ -520,6 +503,12 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
 
             const batch = writeBatch(db);
             const dateKey = today.replace(/-/g, ""); // YYYYMMDD
+            const classNameNorm = normalizeClassName(students[0]?.class);
+
+            let presentCount = 0;
+            let absentCount = 0;
+            let dispensedCount = 0;
+            let transferCount = 0;
 
             students.forEach((s) => {
                 // Ao criar um ID com base na data + aluno, garantimos a sobrescrita (merge)
@@ -527,18 +516,41 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 const docRef = doc(db, "attendance", docId);
                 const currentStatus = attendance[s.firestoreId] || "P";
 
+                if (currentStatus === "P") presentCount++;
+                else if (currentStatus === "F") absentCount++;
+                else if (currentStatus === "A" || currentStatus === "D") dispensedCount++;
+                else if (currentStatus === "TR" || s.status === "TR") transferCount++;
+
                 batch.set(docRef, {
                     studentId: s.id,
                     studentName: s.name,
-                    studentClass: normalizeClassName(s.class),
+                    studentClass: classNameNorm,
                     studentFirestoreId: s.firestoreId,
                     date: today,
                     status: currentStatus,
                     teacher: user?.email || "professor",
                     timestamp: serverTimestamp(),
                 });
-
             });
+
+            // Registrar Resumo Diário para Otimização de Leituras
+            const activeStudents = Math.max(0, students.length - transferCount);
+            const presentPercentage = activeStudents > 0 ? Math.round((presentCount / activeStudents) * 100) : 0;
+            const summaryDocId = `${today}_${classNameNorm}`;
+            const summaryRef = doc(db, "daily_summaries", summaryDocId);
+            batch.set(summaryRef, {
+                date: today,
+                className: classNameNorm,
+                totalStudents: students.length,
+                presentCount,
+                absentCount,
+                dispensedCount,
+                transferCount,
+                activeStudents,
+                presentPercentage,
+                teacher: user?.email || "professor",
+                updatedAt: serverTimestamp()
+            }, { merge: true });
 
             // Clean snapshot for history log to prevent undefined fields
             const sanitizedSnapshot: Record<string, AttendanceStatus> = {};
@@ -551,7 +563,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             await addDoc(historyRef, {
                 action: isUpdateMode ? "UPDATE" : "CREATE",
                 date: today,
-                studentClass: normalizeClassName(students[0]?.class),
+                studentClass: classNameNorm,
                 teacher: user?.email || "professor",
                 timestamp: serverTimestamp(),
                 snapshot: sanitizedSnapshot 

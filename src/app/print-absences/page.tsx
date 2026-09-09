@@ -6,6 +6,8 @@ import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { Suspense } from "react";
 
+import { useStudents } from "@/context/StudentsContext";
+
 type AttendanceRecord = {
     studentId: number;
     studentName: string;
@@ -17,6 +19,7 @@ type AttendanceRecord = {
 function PrintAbsencesContent() {
     const searchParams = useSearchParams();
     const date = searchParams.get("date");
+    const { students: globalStudents, loading: studentsLoading } = useStudents();
     
     const [absencesByClass, setAbsencesByClass] = useState<Record<string, { name: string; id: number; presenceRate: number }[]>>({});
     const [missingClasses, setMissingClasses] = useState<string[]>([]);
@@ -26,6 +29,8 @@ function PrintAbsencesContent() {
         if (!date) return;
 
         async function fetchData() {
+            if (studentsLoading) return;
+            setLoading(true);
             try {
                 if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
@@ -144,9 +149,8 @@ function PrintAbsencesContent() {
                     absences[cls].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
                 });
 
-                // Fetch all classes to find missing ones
-                const studentsSnap = await getDocs(collection(db, "students"));
-                const allClasses = Array.from(new Set(studentsSnap.docs.filter(d => d.data().status !== "TR").map(d => normalizeClassName(d.data().class as string))));
+                // Fetch all classes from StudentsContext
+                const allClasses = Array.from(new Set(globalStudents.filter(d => d.status !== "TR").map(d => normalizeClassName(d.class as string))));
                 
                 const missing = allClasses
                     .filter(cls => !completedClassesToday.has(cls))
@@ -162,7 +166,7 @@ function PrintAbsencesContent() {
         }
 
         fetchData();
-    }, [date]);
+    }, [date, globalStudents, studentsLoading]);
 
     if (!date) {
         return <div className="p-8 text-center text-red-500 font-bold">Data não especificada na URL.</div>;

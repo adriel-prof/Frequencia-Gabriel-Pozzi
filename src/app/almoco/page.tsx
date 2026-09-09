@@ -6,6 +6,8 @@ import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import Link from "next/link";
 
+import { useStudents } from "@/context/StudentsContext";
+
 type AttendanceRecord = {
     studentClass: string;
     status: "P" | "F" | "D" | "A" | "TR";
@@ -68,6 +70,7 @@ function AlmocoContent() {
     const todayStr = new Date().toISOString().split("T")[0];
     const [selectedDate, setSelectedDate] = useState<string>(dateParam || todayStr);
     
+    const { students: globalStudents, loading: studentsLoading } = useStudents();
     const [classStats, setClassStats] = useState<ClassStat[]>([]);
     const [missingClasses, setMissingClasses] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
@@ -88,14 +91,17 @@ function AlmocoContent() {
 
     useEffect(() => {
         async function fetchData() {
+            if (studentsLoading) return;
             setLoading(true);
             try {
                 const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/[°º]/g, 'º') : "";
                 const formatClassName = (name: string) => name ? name.trim().toUpperCase().replace(/[°º]/g, '') : "";
 
+                const studentsList = globalStudents.filter(s => s.status !== "TR");
+                const allClasses = Array.from(new Set(studentsList.map(s => normalizeClassName(s.class))));
+
                 if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
-                    const studentsList = mockDb.getStudents().filter(s => s.status !== "TR");
                     const recordsData = mockDb.getAttendance(selectedDate) as unknown as AttendanceRecord[];
                     
                     const completedClassesToday = new Set<string>();
@@ -130,7 +136,6 @@ function AlmocoContent() {
 
                     result.sort((a, b) => b.percentage - a.percentage || a.className.localeCompare(b.className, "pt-BR", { numeric: true, sensitivity: 'base' }));
 
-                    const allClasses = Array.from(new Set(studentsList.map(s => normalizeClassName(s.class))));
                     const missing = allClasses
                         .filter(cls => !completedClassesToday.has(cls))
                         .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
@@ -141,17 +146,36 @@ function AlmocoContent() {
                     return;
                 }
 
-                // Busca lista oficial de estudantes
-                const studentsSnap = await getDocs(collection(db, "students"));
-                const studentsList = studentsSnap.docs
-                    .filter(doc => doc.data().status !== "TR")
-                    .map(doc => ({
-                        firestoreId: doc.id,
-                        name: doc.data().name as string,
-                        class: doc.data().class as string
-                    }));
+                // 1. Tenta buscar da coleção otimizada daily_summaries
+                const summaryQuery = query(collection(db, "daily_summaries"), where("date", "==", selectedDate));
+                const summarySnap = await getDocs(summaryQuery);
 
-                // Busca registros de chamada da data
+                if (!summarySnap.empty) {
+                    const completedClassesToday = new Set<string>();
+                    const result: ClassStat[] = summarySnap.docs.map(docSnap => {
+                        const d = docSnap.data();
+                        const clsNorm = normalizeClassName(d.className);
+                        completedClassesToday.add(clsNorm);
+                        return {
+                            className: formatClassName(d.className),
+                            percentage: d.presentPercentage ?? 0,
+                            rawClass: clsNorm
+                        };
+                    });
+
+                    result.sort((a, b) => b.percentage - a.percentage || a.className.localeCompare(b.className, "pt-BR", { numeric: true, sensitivity: 'base' }));
+
+                    const missing = allClasses
+                        .filter(cls => !completedClassesToday.has(cls))
+                        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+                    setClassStats(result);
+                    setMissingClasses(missing);
+                    setLoading(false);
+                    return;
+                }
+
+                // 2. Fallback para cálculo legado se não houver daily_summaries para essa data
                 const q = query(collection(db, "attendance"), where("date", "==", selectedDate));
                 const snapshot = await getDocs(q);
                 const recordsData = snapshot.docs.map(doc => doc.data() as AttendanceRecord);
@@ -188,7 +212,6 @@ function AlmocoContent() {
 
                 result.sort((a, b) => b.percentage - a.percentage || a.className.localeCompare(b.className, "pt-BR", { numeric: true, sensitivity: 'base' }));
 
-                const allClasses = Array.from(new Set(studentsList.map(s => normalizeClassName(s.class))));
                 const missing = allClasses
                     .filter(cls => !completedClassesToday.has(cls))
                     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
@@ -203,7 +226,7 @@ function AlmocoContent() {
         }
 
         fetchData();
-    }, [selectedDate]);
+    }, [selectedDate, globalStudents, studentsLoading]);
 
     // Atualiza a mensagem formatada sempre que os dados ou configurações mudam
     useEffect(() => {

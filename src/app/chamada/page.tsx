@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, getDocs, query, orderBy, where, doc, writeBatch } from "firebase/firestore";
+import { collection, getDocs, query, where, doc, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { AttendanceList } from "@/components/AttendanceList";
 import { TeacherHistory } from "@/components/TeacherHistory";
@@ -9,58 +9,21 @@ import { UserMenu } from "@/components/UserMenu";
 import Image from "next/image";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import { useStudents } from "@/context/StudentsContext";
 import { useRouter } from "next/navigation";
 
-type Student = {
-    firestoreId: string;
-    id: number;
-    name: string;
-    class: string;
-};
-
 export default function ChamadaPage() {
-    const { user, role, loading } = useAuth();
+    const { user, role, loading: authLoading } = useAuth();
+    const { students, loading: studentsLoading, refreshStudents } = useStudents();
     const router = useRouter();
-    const [students, setStudents] = useState<Student[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
     const [selectedClass, setSelectedClass] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<"chamada" | "historico">("chamada");
 
     useEffect(() => {
-        if (!loading && !user) {
+        if (!authLoading && !user) {
             router.push("/login");
         }
-    }, [user, loading, router]);
-
-    useEffect(() => {
-        async function fetchStudents() {
-            if (!user) return;
-            try {
-                if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
-                    const { mockDb } = await import("@/lib/mockDatabase");
-                    const fetchedStudents = mockDb.getStudents();
-                    fetchedStudents.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-                    setStudents(fetchedStudents);
-                    setIsLoading(false);
-                    return;
-                }
-                const q = query(collection(db, "students"), orderBy("name", "asc"));
-                const snapshot = await getDocs(q);
-                const fetchedStudents = snapshot.docs.map(docSnap => ({
-                    firestoreId: docSnap.id,
-                    ...docSnap.data()
-                })) as Student[];
-
-                fetchedStudents.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-                setStudents(fetchedStudents);
-            } catch (err) {
-                console.error("Erro ao buscar alunos:", err);
-            } finally {
-                setIsLoading(false);
-            }
-        }
-        fetchStudents();
-    }, [user]);
+    }, [user, authLoading, router]);
 
     const handleEditClassName = async (oldClassName: string, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -70,13 +33,13 @@ export default function ChamadaPage() {
         try {
             if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
-                const students = mockDb.getStudents();
-                students.forEach(s => {
+                const currentStudents = mockDb.getStudents();
+                currentStudents.forEach(s => {
                     if (s.class === oldClassName) {
                         mockDb.saveStudent({ ...s, class: newClassName.trim() });
                     }
                 });
-                setStudents(prev => prev.map(s => s.class === oldClassName ? { ...s, class: newClassName.trim() } : s));
+                await refreshStudents();
                 alert("Nome da turma atualizado com sucesso (Simulação Local)!");
                 return;
             }
@@ -91,7 +54,7 @@ export default function ChamadaPage() {
 
             await batch.commit();
 
-            setStudents(prev => prev.map(s => s.class === oldClassName ? { ...s, class: newClassName.trim() } : s));
+            await refreshStudents();
             alert("Nome da turma atualizado com sucesso!");
         } catch (err) {
             console.error(err);
@@ -99,7 +62,7 @@ export default function ChamadaPage() {
         }
     };
 
-    if (loading || isLoading) {
+    if (authLoading || studentsLoading) {
         return (
             <div className="flex h-screen items-center justify-center">
                 <div className="w-10 h-10 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div>

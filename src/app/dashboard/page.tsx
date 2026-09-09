@@ -5,6 +5,8 @@ import { doc, getDocs, query, orderBy, writeBatch, collection, where } from "fir
 import { db } from "@/lib/firebaseConfig";
 
 
+import { useStudents } from "@/context/StudentsContext";
+
 type AttendanceRecord = {
     id: string;
     studentId: number;
@@ -30,7 +32,7 @@ const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().re
 
 
 export default function DashboardPage() {
-
+    const { students: globalStudents, loading: studentsLoading } = useStudents();
     const [records, setRecords] = useState<AttendanceRecord[]>([]);
     const [students, setStudents] = useState<Student[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -39,35 +41,13 @@ export default function DashboardPage() {
     const [selectedClass, setSelectedClass] = useState<string | null>(null);
     const [allClasses, setAllClasses] = useState<string[]>([]);
 
-    // OTIMIZAÇÃO: Busca a lista de turmas e alunos apenas uma vez ao carregar o dashboard
     useEffect(() => {
-        async function fetchClasses() {
-            try {
-                if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
-                    const { mockDb } = await import("@/lib/mockDatabase");
-                    const studentsList = mockDb.getStudents();
-                    setStudents(studentsList);
-                    const uniqueClasses = Array.from(new Set(studentsList.map(s => normalizeClassName(s.class as string)))).sort();
-                    setAllClasses(uniqueClasses);
-                    return;
-                }
-                const studentsSnap = await getDocs(collection(db, "students"));
-                const studentsList = studentsSnap.docs.map(doc => ({
-                    firestoreId: doc.id,
-                    name: doc.data().name as string,
-                    class: doc.data().class as string,
-                    id: Number(doc.data().id),
-                    status: doc.data().status as string
-                }));
-                setStudents(studentsList);
-                const uniqueClasses = Array.from(new Set(studentsList.map(s => normalizeClassName(s.class as string)))).sort();
-                setAllClasses(uniqueClasses);
-            } catch (err) {
-                console.error("Erro ao buscar turmas e alunos:", err);
-            }
+        if (!studentsLoading) {
+            setStudents(globalStudents);
+            const uniqueClasses = Array.from(new Set(globalStudents.map(s => normalizeClassName(s.class as string)))).sort();
+            setAllClasses(uniqueClasses);
         }
-        fetchClasses();
-    }, []);
+    }, [globalStudents, studentsLoading]);
 
     useEffect(() => {
         async function fetchRecords() {

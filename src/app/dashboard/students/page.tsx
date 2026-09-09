@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, getDocs, doc, setDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
+
+import { useStudents } from "@/context/StudentsContext";
 
 type Student = {
     firestoreId: string;
@@ -13,6 +15,7 @@ type Student = {
 };
 
 export default function StudentsTransferPage() {
+    const { students: globalStudents, loading: studentsLoading, refreshStudents } = useStudents();
     const [students, setStudents] = useState<Student[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
@@ -28,36 +31,11 @@ export default function StudentsTransferPage() {
     const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
     useEffect(() => {
-        fetchStudents();
-    }, []);
-
-    const fetchStudents = async () => {
-        setIsLoading(true);
-        try {
-            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
-                const { mockDb } = await import("@/lib/mockDatabase");
-                const list = mockDb.getStudents();
-                setStudents(list);
-                setIsLoading(false);
-                return;
-            }
-
-            const snapshot = await getDocs(collection(db, "students"));
-            const list = snapshot.docs.map(docSnap => ({
-                firestoreId: docSnap.id,
-                name: docSnap.data().name as string,
-                class: docSnap.data().class as string,
-                id: Number(docSnap.data().id),
-                status: docSnap.data().status as string
-            })) as Student[];
-            
-            setStudents(list);
-        } catch (error) {
-            console.error("Erro ao buscar alunos:", error);
-        } finally {
+        if (!studentsLoading) {
+            setStudents(globalStudents);
             setIsLoading(false);
         }
-    };
+    }, [globalStudents, studentsLoading]);
 
     const handleToggleTR = async (student: Student) => {
         const newTR = student.status !== "TR";
@@ -195,11 +173,7 @@ export default function StudentsTransferPage() {
                 id: Number(newNumber)
             }, { merge: true });
 
-            setStudents(prev => prev.map(s => 
-                s.firestoreId === transferCandidate.firestoreId 
-                    ? { ...s, class: finalTargetClass, id: Number(newNumber) } 
-                    : s
-            ));
+            await refreshStudents();
 
             setFeedback({ type: "success", msg: `Aluno transferido com sucesso para a turma ${finalTargetClass}!` });
             setTimeout(() => setTransferCandidate(null), 1500);
