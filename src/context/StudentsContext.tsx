@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 
 export type Student = {
@@ -72,17 +72,17 @@ export function StudentsProvider({ children }: { children: React.ReactNode }) {
             return;
         }
 
-        const q = query(collection(db, "students"), orderBy("name", "asc"));
-        const snap = await getDocs(q);
+        const snap = await getDocs(collection(db, "students"));
         const list = snap.docs.map(d => ({
             firestoreId: d.id,
-            name: d.data().name as string,
-            class: d.data().class as string,
-            id: Number(d.data().id),
+            name: (d.data().name as string) || "",
+            class: (d.data().class as string) || "",
+            id: Number(d.data().id || 0),
             status: d.data().status as string,
             dispensed: d.data().dispensed
         })) as Student[];
 
+        list.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
         setStudents(list);
         if (typeof window !== "undefined") {
             localStorage.setItem(CACHE_KEY, JSON.stringify(list));
@@ -95,17 +95,17 @@ export function StudentsProvider({ children }: { children: React.ReactNode }) {
             if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 return;
             }
-            const q = query(collection(db, "students"), orderBy("name", "asc"));
-            const snap = await getDocs(q);
+            const snap = await getDocs(collection(db, "students"));
             const list = snap.docs.map(d => ({
                 firestoreId: d.id,
-                name: d.data().name as string,
-                class: d.data().class as string,
-                id: Number(d.data().id),
+                name: (d.data().name as string) || "",
+                class: (d.data().class as string) || "",
+                id: Number(d.data().id || 0),
                 status: d.data().status as string,
                 dispensed: d.data().dispensed
             })) as Student[];
 
+            list.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
             setStudents(list);
             localStorage.setItem(CACHE_KEY, JSON.stringify(list));
         } catch (e) {

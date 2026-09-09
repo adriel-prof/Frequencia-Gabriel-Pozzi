@@ -69,10 +69,15 @@ function PrintContent() {
                 }
 
                 // 1. Tenta buscar da coleção otimizada daily_summaries
-                const summaryQuery = query(collection(db, "daily_summaries"), where("date", "==", date));
-                const summarySnap = await getDocs(summaryQuery);
+                let summarySnap = null;
+                try {
+                    const summaryQuery = query(collection(db, "daily_summaries"), where("date", "==", date));
+                    summarySnap = await getDocs(summaryQuery);
+                } catch (e) {
+                    console.warn("Erro ao buscar daily_summaries para impressao, usando fallback:", e);
+                }
 
-                if (!summarySnap.empty) {
+                if (summarySnap && !summarySnap.empty) {
                     const result = summarySnap.docs.map(docSnap => {
                         const d = docSnap.data();
                         return {
@@ -104,20 +109,27 @@ function PrintContent() {
                     
                     // Alunos atuais da turma no banco
                     const classStudents = studentsList.filter(s => normalizeClassName(s.class) === clsNorm);
-                    
-                    classStudents.forEach(s => {
-                        const record = recordsData.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
-                        if (record) {
-                            if (record.status === "P" || record.status === "A") {
+                    if (classStudents.length === 0) {
+                        const classRecords = recordsData.filter(r => normalizeClassName(r.studentClass) === clsNorm);
+                        classRecords.forEach(r => {
+                            if (r.status === "P" || r.status === "A") stats[clsNorm].p += 1;
+                            else if (r.status === "F") stats[clsNorm].f += 1;
+                        });
+                    } else {
+                        classStudents.forEach(s => {
+                            const record = recordsData.find(r => (r.studentFirestoreId && r.studentFirestoreId === s.firestoreId) || r.studentName === s.name);
+                            if (record) {
+                                if (record.status === "P" || record.status === "A") {
+                                    stats[clsNorm].p += 1;
+                                } else if (record.status === "F") {
+                                    stats[clsNorm].f += 1;
+                                }
+                            } else {
+                                // Aluno incluído recentemente sem registro no dia conta como presente
                                 stats[clsNorm].p += 1;
-                            } else if (record.status === "F") {
-                                stats[clsNorm].f += 1;
                             }
-                        } else {
-                            // Aluno incluído recentemente sem registro no dia conta como presente
-                            stats[clsNorm].p += 1;
-                        }
-                    });
+                        });
+                    }
                 });
 
                 const result = Object.keys(stats).map(cls => {

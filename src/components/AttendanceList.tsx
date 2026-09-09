@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { collection, writeBatch, doc, getDoc, setDoc, serverTimestamp, deleteDoc, addDoc, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { useAuth } from "@/context/AuthContext";
@@ -52,7 +52,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     const [timeSettings, setTimeSettings] = useState({ start: "08:40", end: "23:59" });
 
     // Reutilizar lista global de estudantes do context sem chamadas redundantes ao banco
-    const allStudentsList = role === "admin" ? globalStudents : [];
+    const allStudentsList = useMemo(() => role === "admin" ? globalStudents : [], [role, globalStudents]);
 
     // Recalcular número sugerido para transferência
     useEffect(() => {

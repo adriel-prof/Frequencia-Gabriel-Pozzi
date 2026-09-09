@@ -59,6 +59,13 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
     
+    // Regras da coleção 'daily_summaries'
+    match /daily_summaries/{docId} {
+      allow read: if isProf();
+      allow create, update: if isProf();
+      allow delete: if isAdmin();
+    }
+
     // Fallback retrocompatível para 'config'
     match /config/{docId} {
       allow read: if isProf();

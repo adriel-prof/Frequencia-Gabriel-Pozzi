@@ -147,10 +147,15 @@ function AlmocoContent() {
                 }
 
                 // 1. Tenta buscar da coleção otimizada daily_summaries
-                const summaryQuery = query(collection(db, "daily_summaries"), where("date", "==", selectedDate));
-                const summarySnap = await getDocs(summaryQuery);
+                let summarySnap = null;
+                try {
+                    const summaryQuery = query(collection(db, "daily_summaries"), where("date", "==", selectedDate));
+                    summarySnap = await getDocs(summaryQuery);
+                } catch (e) {
+                    console.warn("Erro ao buscar daily_summaries no almoço, usando fallback:", e);
+                }
 
-                if (!summarySnap.empty) {
+                if (summarySnap && !summarySnap.empty) {
                     const completedClassesToday = new Set<string>();
                     const result: ClassStat[] = summarySnap.docs.map(docSnap => {
                         const d = docSnap.data();
@@ -184,24 +189,34 @@ function AlmocoContent() {
                 const stats: Record<string, { p: number; f: number }> = {};
 
                 recordsData.forEach(r => {
-                    completedClassesToday.add(normalizeClassName(r.studentClass));
+                    if (r.studentClass) {
+                        completedClassesToday.add(normalizeClassName(r.studentClass));
+                    }
                 });
 
                 completedClassesToday.forEach(clsNorm => {
                     stats[clsNorm] = { p: 0, f: 0 };
                     const classStudents = studentsList.filter(s => normalizeClassName(s.class) === clsNorm);
-                    classStudents.forEach(s => {
-                        const record = recordsData.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
-                        if (record) {
-                            if (record.status === "P" || record.status === "A") {
+                    if (classStudents.length === 0) {
+                        const classRecords = recordsData.filter(r => normalizeClassName(r.studentClass) === clsNorm);
+                        classRecords.forEach(r => {
+                            if (r.status === "P" || r.status === "A") stats[clsNorm].p += 1;
+                            else if (r.status === "F") stats[clsNorm].f += 1;
+                        });
+                    } else {
+                        classStudents.forEach(s => {
+                            const record = recordsData.find(r => (r.studentFirestoreId && r.studentFirestoreId === s.firestoreId) || r.studentName === s.name);
+                            if (record) {
+                                if (record.status === "P" || record.status === "A") {
+                                    stats[clsNorm].p += 1;
+                                } else if (record.status === "F") {
+                                    stats[clsNorm].f += 1;
+                                }
+                            } else {
                                 stats[clsNorm].p += 1;
-                            } else if (record.status === "F") {
-                                stats[clsNorm].f += 1;
                             }
-                        } else {
-                            stats[clsNorm].p += 1;
-                        }
-                    });
+                        });
+                    }
                 });
 
                 const result: ClassStat[] = Object.keys(stats).map(cls => {
