@@ -41,7 +41,6 @@ export function isAllowedDomain(email: string): boolean {
     const emailLower = email.toLowerCase().trim();
     return (
         emailLower.endsWith("@prof.educacao.sp.gov.br") ||
-        emailLower.endsWith("@servidor.educacao.sp.gov.br") ||
         emailLower.endsWith("@educacao.sp.gov.br")
     );
 }
@@ -112,7 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     await signOut(auth);
                     setUser(null);
                     setRole(null);
-                    setError("Acesso negado. Utilize um e-mail institucional @prof, @servidor ou @educacao.sp.gov.br");
+                    setError("Acesso negado. Utilize um e-mail institucional @prof.educacao.sp.gov.br ou @educacao.sp.gov.br");
                 }
             } else {
                 setUser(null);
@@ -153,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setError(null);
         const emailLower = email.toLowerCase().trim();
         if (!isAllowedDomain(emailLower)) {
-            const msg = "Acesso negado. Utilize um e-mail institucional @prof, @servidor ou @educacao.sp.gov.br";
+            const msg = "Acesso negado. Utilize um e-mail institucional @prof.educacao.sp.gov.br ou @educacao.sp.gov.br";
             setError(msg);
             throw new Error(msg);
         }
@@ -179,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setError(null);
         const emailLower = email.toLowerCase().trim();
         if (!isAllowedDomain(emailLower)) {
-            const msg = "Acesso negado. Utilize um e-mail institucional @prof, @servidor ou @educacao.sp.gov.br";
+            const msg = "Acesso negado. Utilize um e-mail institucional @prof.educacao.sp.gov.br ou @educacao.sp.gov.br";
             setError(msg);
             throw new Error(msg);
         }
@@ -205,7 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setError(null);
         const emailLower = email.toLowerCase().trim();
         if (!isAllowedDomain(emailLower)) {
-            const msg = "Acesso negado. Utilize um e-mail institucional @prof, @servidor ou @educacao.sp.gov.br";
+            const msg = "Acesso negado. Utilize um e-mail institucional @prof.educacao.sp.gov.br ou @educacao.sp.gov.br";
             setError(msg);
             throw new Error(msg);
         }

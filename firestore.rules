@@ -7,7 +7,6 @@ service cloud.firestore {
     function isProf() {
       return request.auth != null && request.auth.token.email != null && (
         request.auth.token.email.matches('(?i).*@prof[.]educacao[.]sp[.]gov[.]br$') ||
-        request.auth.token.email.matches('(?i).*@servidor[.]educacao[.]sp[.]gov[.]br$') ||
         request.auth.token.email.matches('(?i).*@educacao[.]sp[.]gov[.]br$')
       );
     }

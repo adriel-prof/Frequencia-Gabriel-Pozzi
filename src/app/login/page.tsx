@@ -56,7 +56,7 @@ export default function LoginPage() {
         }
 
         if (!isAllowedDomain(emailTrimmed)) {
-            setLocalError("Utilize um e-mail institucional válido (@prof, @servidor ou @educacao.sp.gov.br)");
+            setLocalError("Utilize um e-mail institucional válido (@prof ou @educacao.sp.gov.br)");
             return;
         }
 
@@ -177,7 +177,7 @@ export default function LoginPage() {
                     {mode === "google" && (
                         <div className="space-y-4">
                             <p className="text-xs text-gray-500 text-center leading-relaxed">
-                                Recomendado para e-mails <strong className="text-gray-700">@prof.educacao.sp.gov.br</strong> e <strong className="text-gray-700">@servidor.educacao.sp.gov.br</strong>.
+                                Recomendado para e-mails <strong className="text-gray-700">@prof.educacao.sp.gov.br</strong>.
                             </p>
                             <button
                                 type="button"
@@ -330,7 +330,7 @@ export default function LoginPage() {
                 {/* Footer */}
                 <div className="bg-gray-50 border-t border-gray-100 p-4 text-center">
                     <p className="text-[11px] text-gray-400">
-                        Suporta e-mails <strong className="text-gray-500">@prof</strong>, <strong className="text-gray-500">@servidor</strong> e <strong className="text-gray-500">@educacao.sp.gov.br</strong>
+                        Suporta e-mails <strong className="text-gray-500">@prof</strong> e <strong className="text-gray-500">@educacao.sp.gov.br</strong>
                     </p>
                 </div>
             </div>
