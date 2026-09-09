@@ -530,7 +530,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     status: currentStatus,
                     teacher: user?.email || "professor",
                     timestamp: serverTimestamp(),
-                });
+                }, { merge: true });
             });
 
             // Registrar Resumo Diário para Otimização de Leituras

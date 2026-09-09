@@ -3,11 +3,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Função utilitária para verificar se o usuário logado tem o domínio correto (@prof ou @servidor)
+    // Função utilitária para verificar se o usuário logado tem o domínio institucional correto
     function isProf() {
-      return request.auth != null && (
-        request.auth.token.email.matches('.*@prof[.]educacao[.]sp[.]gov[.]br$') ||
-        request.auth.token.email.matches('.*@servidor[.]educacao[.]sp[.]gov[.]br$')
+      return request.auth != null && request.auth.token.email != null && (
+        request.auth.token.email.matches('(?i).*@prof[.]educacao[.]sp[.]gov[.]br$') ||
+        request.auth.token.email.matches('(?i).*@servidor[.]educacao[.]sp[.]gov[.]br$') ||
+        request.auth.token.email.matches('(?i).*@educacao[.]sp[.]gov[.]br$')
       );
     }
 
@@ -41,6 +42,13 @@ service cloud.firestore {
       allow delete: if isAdmin(); // Apenas Administradores podem deletar
     }
 
+    // Regras da coleção 'daily_summaries'
+    match /daily_summaries/{docId} {
+      allow read: if isProf();
+      allow create, update: if isProf(); // Permite criar e atualizar o resumo diário
+      allow delete: if isAdmin();
+    }
+
     // Regras da coleção 'attendance_history'
     match /attendance_history/{docId} {
       allow read, create: if isProf();
@@ -57,13 +65,6 @@ service cloud.firestore {
     match /blocked_dates/{docId} {
       allow read: if isProf();
       allow write: if isAdmin();
-    }
-    
-    // Regras da coleção 'daily_summaries'
-    match /daily_summaries/{docId} {
-      allow read: if isProf();
-      allow create, update: if isProf();
-      allow delete: if isAdmin();
     }
 
     // Fallback retrocompatível para 'config'
