@@ -1,7 +1,15 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { User, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import {
+    User,
+    signInWithPopup,
+    signOut,
+    onAuthStateChanged,
+    signInWithEmailAndPassword,
+    createUserWithEmailAndPassword,
+    sendPasswordResetEmail
+} from "firebase/auth";
 import { auth, googleProvider, db } from "@/lib/firebaseConfig";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
@@ -11,6 +19,9 @@ interface AuthContextType {
     loading: boolean;
     error: string | null;
     signIn: () => Promise<void>;
+    signInWithEmail: (email: string, password: string) => Promise<void>;
+    signUpWithEmail: (email: string, password: string) => Promise<void>;
+    resetPassword: (email: string) => Promise<void>;
     logout: () => Promise<void>;
 }
 
@@ -20,8 +31,20 @@ const AuthContext = createContext<AuthContextType>({
     loading: true,
     error: null,
     signIn: async () => { },
+    signInWithEmail: async () => { },
+    signUpWithEmail: async () => { },
+    resetPassword: async () => { },
     logout: async () => { },
 });
+
+export function isAllowedDomain(email: string): boolean {
+    const emailLower = email.toLowerCase().trim();
+    return (
+        emailLower.endsWith("@prof.educacao.sp.gov.br") ||
+        emailLower.endsWith("@servidor.educacao.sp.gov.br") ||
+        emailLower.endsWith("@educacao.sp.gov.br")
+    );
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
@@ -53,11 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setLoading(true);
             if (currentUser && currentUser.email) {
                 const emailLower = currentUser.email.toLowerCase().trim();
-                if (
-                    emailLower.endsWith("@prof.educacao.sp.gov.br") ||
-                    emailLower.endsWith("@servidor.educacao.sp.gov.br") ||
-                    emailLower.endsWith("@educacao.sp.gov.br")
-                ) {
+                if (isAllowedDomain(emailLower)) {
                     try {
                         const roleDocRef = doc(db, "roles", currentUser.email);
                         const roleDoc = await getDoc(roleDocRef);
@@ -72,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                             await setDoc(roleDocRef, {
                                 role: userRole,
                                 email: currentUser.email,
-                                name: currentUser.displayName
+                                name: currentUser.displayName || currentUser.email.split("@")[0]
                             });
                         }
 
@@ -130,6 +149,82 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     };
 
+    const signInWithEmail = async (email: string, password: string) => {
+        setError(null);
+        const emailLower = email.toLowerCase().trim();
+        if (!isAllowedDomain(emailLower)) {
+            const msg = "Acesso negado. Utilize um e-mail institucional @prof, @servidor ou @educacao.sp.gov.br";
+            setError(msg);
+            throw new Error(msg);
+        }
+        try {
+            await signInWithEmailAndPassword(auth, emailLower, password);
+        } catch (err: unknown) {
+            let msg = "Erro ao realizar login. Verifique suas credenciais.";
+            if (err instanceof Error) {
+                if (err.message.includes("invalid-credential") || err.message.includes("wrong-password") || err.message.includes("user-not-found")) {
+                    msg = "E-mail ou senha incorretos.";
+                } else if (err.message.includes("too-many-requests")) {
+                    msg = "Muitas tentativas malsucedidas. Aguarde um instante e tente novamente.";
+                } else {
+                    msg = err.message;
+                }
+            }
+            setError(msg);
+            throw new Error(msg);
+        }
+    };
+
+    const signUpWithEmail = async (email: string, password: string) => {
+        setError(null);
+        const emailLower = email.toLowerCase().trim();
+        if (!isAllowedDomain(emailLower)) {
+            const msg = "Acesso negado. Utilize um e-mail institucional @prof, @servidor ou @educacao.sp.gov.br";
+            setError(msg);
+            throw new Error(msg);
+        }
+        try {
+            await createUserWithEmailAndPassword(auth, emailLower, password);
+        } catch (err: unknown) {
+            let msg = "Erro ao cadastrar usuário.";
+            if (err instanceof Error) {
+                if (err.message.includes("email-already-in-use")) {
+                    msg = "Este e-mail já possui uma conta cadastrada. Faça o login ou escolha 'Esqueci minha senha'.";
+                } else if (err.message.includes("weak-password")) {
+                    msg = "A senha deve conter pelo menos 6 caracteres.";
+                } else {
+                    msg = err.message;
+                }
+            }
+            setError(msg);
+            throw new Error(msg);
+        }
+    };
+
+    const resetPassword = async (email: string) => {
+        setError(null);
+        const emailLower = email.toLowerCase().trim();
+        if (!isAllowedDomain(emailLower)) {
+            const msg = "Acesso negado. Utilize um e-mail institucional @prof, @servidor ou @educacao.sp.gov.br";
+            setError(msg);
+            throw new Error(msg);
+        }
+        try {
+            await sendPasswordResetEmail(auth, emailLower);
+        } catch (err: unknown) {
+            let msg = "Erro ao enviar e-mail de redefinição de senha.";
+            if (err instanceof Error) {
+                if (err.message.includes("user-not-found")) {
+                    msg = "E-mail não encontrado no sistema. Crie uma conta no Primeiro Acesso.";
+                } else {
+                    msg = err.message;
+                }
+            }
+            setError(msg);
+            throw new Error(msg);
+        }
+    };
+
     const logout = async () => {
         if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
             sessionStorage.removeItem("mock_user");
@@ -168,10 +263,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     return (
-        <AuthContext.Provider value={{ user, role, loading, error, signIn, logout }}>
+        <AuthContext.Provider value={{ user, role, loading, error, signIn, signInWithEmail, signUpWithEmail, resetPassword, logout }}>
             {children}
         </AuthContext.Provider>
     );
 }
 
 export const useAuth = () => useContext(AuthContext);
+
