@@ -146,47 +146,13 @@ function AlmocoContent() {
                     return;
                 }
 
-                // 1. Tenta buscar da coleção otimizada daily_summaries
-                let summarySnap = null;
-                try {
-                    const summaryQuery = query(collection(db, "daily_summaries"), where("date", "==", selectedDate));
-                    summarySnap = await getDocs(summaryQuery);
-                } catch (e) {
-                    console.warn("Erro ao buscar daily_summaries no almoço, usando fallback:", e);
-                }
-
-                if (summarySnap && !summarySnap.empty) {
-                    const completedClassesToday = new Set<string>();
-                    const result: ClassStat[] = summarySnap.docs.map(docSnap => {
-                        const d = docSnap.data();
-                        const clsNorm = normalizeClassName(d.className);
-                        completedClassesToday.add(clsNorm);
-                        return {
-                            className: formatClassName(d.className),
-                            percentage: d.presentPercentage ?? 0,
-                            rawClass: clsNorm
-                        };
-                    });
-
-                    result.sort((a, b) => b.percentage - a.percentage || a.className.localeCompare(b.className, "pt-BR", { numeric: true, sensitivity: 'base' }));
-
-                    const missing = allClasses
-                        .filter(cls => !completedClassesToday.has(cls))
-                        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-
-                    setClassStats(result);
-                    setMissingClasses(missing);
-                    setLoading(false);
-                    return;
-                }
-
-                // 2. Fallback para cálculo legado se não houver daily_summaries para essa data
+                // Busca registros de chamada diretamente para ter paridade total com o Dashboard
                 const q = query(collection(db, "attendance"), where("date", "==", selectedDate));
                 const snapshot = await getDocs(q);
                 const recordsData = snapshot.docs.map(doc => doc.data() as AttendanceRecord);
 
                 const completedClassesToday = new Set<string>();
-                const stats: Record<string, { p: number; f: number }> = {};
+                const stats: Record<string, { p: number; f: number; raw: string }> = {};
 
                 recordsData.forEach(r => {
                     if (r.studentClass) {
@@ -195,7 +161,7 @@ function AlmocoContent() {
                 });
 
                 completedClassesToday.forEach(clsNorm => {
-                    stats[clsNorm] = { p: 0, f: 0 };
+                    stats[clsNorm] = { p: 0, f: 0, raw: clsNorm };
                     const classStudents = studentsList.filter(s => normalizeClassName(s.class) === clsNorm);
                     if (classStudents.length === 0) {
                         const classRecords = recordsData.filter(r => normalizeClassName(r.studentClass) === clsNorm);
@@ -205,8 +171,10 @@ function AlmocoContent() {
                         });
                     } else {
                         classStudents.forEach(s => {
+                            if (s.status === "TR") return;
                             const record = recordsData.find(r => (r.studentFirestoreId && r.studentFirestoreId === s.firestoreId) || r.studentName === s.name);
                             if (record) {
+                                if (record.status === "TR") return;
                                 if (record.status === "P" || record.status === "A") {
                                     stats[clsNorm].p += 1;
                                 } else if (record.status === "F") {
@@ -222,7 +190,10 @@ function AlmocoContent() {
                 const result: ClassStat[] = Object.keys(stats).map(cls => {
                     const total = stats[cls].p + stats[cls].f;
                     const percentage = total === 0 ? 0 : Math.round((stats[cls].p / total) * 100);
-                    return { className: formatClassName(cls), percentage, rawClass: cls };
+                    
+                    const sampleRecord = recordsData.find(r => normalizeClassName(r.studentClass) === cls);
+                    const rawName = sampleRecord?.studentClass || cls;
+                    return { className: formatClassName(rawName), percentage, rawClass: cls };
                 });
 
                 result.sort((a, b) => b.percentage - a.percentage || a.className.localeCompare(b.className, "pt-BR", { numeric: true, sensitivity: 'base' }));

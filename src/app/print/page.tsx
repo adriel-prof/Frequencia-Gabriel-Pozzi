@@ -68,33 +68,9 @@ function PrintContent() {
                     return;
                 }
 
-                // 1. Tenta buscar da coleção otimizada daily_summaries
-                let summarySnap = null;
-                try {
-                    const summaryQuery = query(collection(db, "daily_summaries"), where("date", "==", date));
-                    summarySnap = await getDocs(summaryQuery);
-                } catch (e) {
-                    console.warn("Erro ao buscar daily_summaries para impressao, usando fallback:", e);
-                }
-
-                if (summarySnap && !summarySnap.empty) {
-                    const result = summarySnap.docs.map(docSnap => {
-                        const d = docSnap.data();
-                        return {
-                            className: normalizeClassName(d.className),
-                            percentage: d.presentPercentage ?? 0
-                        };
-                    });
-                    result.sort((a, b) => a.className.localeCompare(b.className, undefined, { numeric: true, sensitivity: 'base' }));
-                    setClassData(result);
-                    setLoading(false);
-                    return;
-                }
-
-                // 2. Fallback para calculo legado se nao houver daily_summaries para essa data
                 const studentsList = globalStudents.filter(s => s.status !== "TR");
 
-                // Busca registros de chamada
+                // Busca registros de chamada diretamente para paridade total
                 const q = query(collection(db, "attendance"), where("date", "==", date));
                 const snapshot = await getDocs(q);
                 const recordsData = snapshot.docs.map(doc => doc.data() as AttendanceRecord);
@@ -117,15 +93,16 @@ function PrintContent() {
                         });
                     } else {
                         classStudents.forEach(s => {
+                            if (s.status === "TR") return;
                             const record = recordsData.find(r => (r.studentFirestoreId && r.studentFirestoreId === s.firestoreId) || r.studentName === s.name);
                             if (record) {
+                                if (record.status === "TR") return;
                                 if (record.status === "P" || record.status === "A") {
                                     stats[clsNorm].p += 1;
                                 } else if (record.status === "F") {
                                     stats[clsNorm].f += 1;
                                 }
                             } else {
-                                // Aluno incluído recentemente sem registro no dia conta como presente
                                 stats[clsNorm].p += 1;
                             }
                         });

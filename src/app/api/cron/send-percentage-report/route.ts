@@ -39,7 +39,7 @@ export async function GET(request: Request) {
             const data = doc.data();
             const clsNorm = normalizeClassName(data.studentClass);
             completedClassesToday.add(clsNorm);
-            if (data.status === "P" || data.status === "D" || data.status === "A") {
+            if (data.status === "P" || data.status === "A") {
                 todayPresentPerClass[clsNorm] = (todayPresentPerClass[clsNorm] || 0) + 1;
             }
         });

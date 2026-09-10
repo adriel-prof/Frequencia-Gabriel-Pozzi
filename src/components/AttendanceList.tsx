@@ -516,9 +516,9 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 const docRef = doc(db, "attendance", docId);
                 const currentStatus = attendance[s.firestoreId] || "P";
 
-                if (currentStatus === "P") presentCount++;
+                if (currentStatus === "P" || currentStatus === "A") presentCount++;
                 else if (currentStatus === "F") absentCount++;
-                else if (currentStatus === "A" || currentStatus === "D") dispensedCount++;
+                else if (currentStatus === "D") dispensedCount++;
                 else if (currentStatus === "TR" || s.status === "TR") transferCount++;
 
                 batch.set(docRef, {
@@ -534,8 +534,9 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             });
 
             // Registrar Resumo Diário para Otimização de Leituras
+            const totalEvaluated = presentCount + absentCount;
             const activeStudents = Math.max(0, students.length - transferCount);
-            const presentPercentage = activeStudents > 0 ? Math.round((presentCount / activeStudents) * 100) : 0;
+            const presentPercentage = totalEvaluated > 0 ? Math.round((presentCount / totalEvaluated) * 100) : 0;
             const summaryDocId = `${today}_${classNameNorm}`;
             const summaryRef = doc(db, "daily_summaries", summaryDocId);
             batch.set(summaryRef, {
