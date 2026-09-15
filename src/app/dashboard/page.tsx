@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { doc, getDocs, query, orderBy, writeBatch, collection, where } from "firebase/firestore";
+import { getDocs, query, orderBy, collection, where } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 
 
@@ -94,37 +94,6 @@ export default function DashboardPage() {
     const filteredRecords = records;
     const classes = Array.from(new Set(filteredRecords.map(r => normalizeClassName(r.studentClass))));
     const missingClasses = allClasses.filter(cls => !classes.includes(normalizeClassName(cls)));
-
-    const handleDeleteClassReport = async (cls: string, classRecords: AttendanceRecord[]) => {
-        if (!confirm(`Tem certeza que deseja excluir DEFNITIVAMENTE o relatório da Turma ${cls} na data selecionada?`)) return;
-
-        try {
-            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
-                const { mockDb } = await import("@/lib/mockDatabase");
-                const allMockAttendance = mockDb.getAttendance();
-                const dateRecordsIds = new Set(classRecords.map(r => r.id));
-                const remaining = allMockAttendance.filter(r => !dateRecordsIds.has(r.id));
-                localStorage.setItem("mock_attendance", JSON.stringify(remaining));
-                
-                setRecords(prev => prev.filter(r => !classRecords.find(cr => cr.id === r.id)));
-                alert("Relatório excluído com sucesso (Simulação Local)!");
-                return;
-            }
-
-            const batch = writeBatch(db);
-            classRecords.forEach(record => {
-                const docRef = doc(db, "attendance", record.id);
-                batch.delete(docRef);
-            });
-            await batch.commit();
-
-            // Remove do estado local para não precisar recarregar a página inteira
-            setRecords(prev => prev.filter(r => !classRecords.find(cr => cr.id === r.id)));
-        } catch (error) {
-            console.error("Erro ao excluir relatório:", error);
-            alert("Falha ao excluir o relatório. Tente novamente.");
-        }
-    };
 
 
 
@@ -323,12 +292,7 @@ export default function DashboardPage() {
                             <div className="flex gap-4 items-center text-sm font-medium">
                                 <span className="text-green-600">Presentes: {totalPresences}</span>
                                 <span className="text-red-600">Faltas: {totalAbsences}</span>
-                                <button
-                                    onClick={() => handleDeleteClassReport(cls!, classRecords)}
-                                    className="ml-4 text-xs font-bold text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"
-                                >
-                                    Excluir Relatório
-                                </button>
+
                             </div>
                         </div>
 
