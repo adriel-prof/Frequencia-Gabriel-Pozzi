@@ -34,12 +34,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="min-h-screen bg-gray-50 flex flex-col pb-20">
             <header className="bg-white sticky top-0 z-20">
                 <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between border-b border-gray-100">
-                    <div className="flex items-center gap-3">
+                    <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer">
                         <div className="relative w-9 h-9 rounded-full bg-white border border-gray-100 overflow-hidden flex-shrink-0">
                             <Image src="/logo.png" alt="Logo" fill sizes="36px" className="object-contain p-1" />
                         </div>
                         <h1 className="font-extrabold text-xl tracking-tight text-gray-900">Configurações Gestão</h1>
-                    </div>
+                    </Link>
                     <div className="flex items-center gap-3">
                         <Link href="/chamada" className="text-sm font-bold text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 px-3 py-1.5 rounded-full transition-colors hidden sm:block">
                             ➔ Fazer Chamada

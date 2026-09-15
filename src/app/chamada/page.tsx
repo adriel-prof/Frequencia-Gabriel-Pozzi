@@ -74,12 +74,19 @@ export default function ChamadaPage() {
         <div className="min-h-screen bg-gray-50">
             <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
                 <div className="max-w-3xl mx-auto px-4 h-16 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                    <Link 
+                        href="/" 
+                        onClick={() => {
+                            setSelectedClass(null);
+                            setViewMode("chamada");
+                        }} 
+                        className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer"
+                    >
                         <div className="relative w-9 h-9 rounded-full bg-white border border-gray-100 overflow-hidden flex-shrink-0 shadow-sm">
                             <Image src="/logo.png" alt="Logo" fill sizes="36px" className="object-contain p-1" />
                         </div>
                         <h1 className="font-bold text-lg text-gray-900">Diário Escolar</h1>
-                    </div>
+                    </Link>
                     <div className="flex items-center gap-2">
                         {role === "admin" && (
                             <Link href="/dashboard" className="text-sm font-bold text-green-700 bg-green-100 hover:bg-green-200 px-3 py-1.5 rounded-full transition-colors">
