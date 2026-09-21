@@ -24,6 +24,7 @@ function PrintAbsencesContent() {
     const [absencesByClass, setAbsencesByClass] = useState<Record<string, { name: string; id: number; presenceRate: number }[]>>({});
     const [missingClasses, setMissingClasses] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
     useEffect(() => {
         if (!date) return;
@@ -31,6 +32,7 @@ function PrintAbsencesContent() {
         async function fetchData() {
             if (studentsLoading) return;
             setLoading(true);
+            setErrorMsg(null);
             try {
                 if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
@@ -151,6 +153,11 @@ function PrintAbsencesContent() {
                 setMissingClasses(missing);
             } catch (err) {
                 console.error("Erro ao buscar dados de faltas para impressão:", err);
+                const isQuota = String(err).includes("quota") || String(err).includes("RESOURCE_EXHAUSTED");
+                setErrorMsg(isQuota
+                    ? "🚨 Cota diária gratuita de leituras do Firebase (50 mil) esgotada hoje. Os dados voltarão a ser exibidos automaticamente assim que a cota for renovada à meia-noite (UTC)."
+                    : "Erro ao buscar dados de faltas para impressão. Verifique sua conexão e tente novamente."
+                );
             } finally {
                 setLoading(false);
             }
@@ -171,6 +178,11 @@ function PrintAbsencesContent() {
 
     return (
         <div className="bg-white min-h-screen text-black p-4 sm:p-8 max-w-4xl mx-auto">
+            {errorMsg && (
+                <div className="mb-6 p-4 bg-red-100 border border-red-300 text-red-800 rounded-xl font-medium text-center">
+                    {errorMsg}
+                </div>
+            )}
             <div className="print:hidden mb-8 text-center flex flex-col items-center">
                 <button
                     onClick={() => window.print()}
