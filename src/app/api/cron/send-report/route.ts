@@ -7,7 +7,6 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
     try {
         const today = new Date().toISOString().split("T")[0];
-        const LOCK_DATE = "2026-04-06";
 
         // OTIMIZAÇÃO: Busca apenas registros de HOJE para identificar pendências e faltosos
         const attendanceRef = adminDb.collection("attendance");
@@ -33,29 +32,20 @@ export async function GET(request: Request) {
             }
         });
 
-        // Para cada aluno que faltou HOJE, buscamos o histórico dele via count() (Economiza milhares de leituras)
+        // Para cada aluno que faltou HOJE, buscamos a estatística acumulada em student_stats (1 leitura por aluno)
         for (const student of todayAbsences) {
             const clsNorm = normalizeClassName(student.studentClass);
-            
-            // Query apenas por studentFirestoreId para evitar erro de índice composto, com fallback para studentId
-            const studentAttendanceSnap = student.studentFirestoreId
-                ? await attendanceRef.where("studentFirestoreId", "==", student.studentFirestoreId).get()
-                : await attendanceRef.where("studentId", "==", student.studentId).get();
-            
-            let total = 0;
-            let absences = 0;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            studentAttendanceSnap.docs.forEach((d: any) => {
-                const data = d.data();
-                if (data.date >= LOCK_DATE && data.status !== "TR") {
-                    total++;
-                    if (data.status === "F") {
-                        absences++;
-                    }
-                }
-            });
+            let presenceRate = 0;
 
-            const presenceRate = total > 0 ? Math.round(((total - absences) / total) * 100) : 0;
+            if (student.studentFirestoreId) {
+                const statsSnap = await adminDb.collection("student_stats").doc(student.studentFirestoreId).get();
+                if (statsSnap.exists) {
+                    const statsData = statsSnap.data();
+                    const totalDays = Number(statsData?.totalDays || 0);
+                    const absences = Number(statsData?.absences || 0);
+                    presenceRate = totalDays > 0 ? Math.round(((totalDays - absences) / totalDays) * 100) : 0;
+                }
+            }
 
             if (!absencesByClass[clsNorm]) {
                 absencesByClass[clsNorm] = [];

@@ -7,7 +7,6 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
     try {
         const today = new Date().toISOString().split("T")[0];
-        const LOCK_DATE = "2026-04-06";
 
         // 1. Buscar todos os alunos para saber o total por turma (USANDO ADMIN SDK)
         const studentsSnap = await adminDb.collection("students").get();
@@ -44,29 +43,26 @@ export async function GET(request: Request) {
             }
         });
 
-        // 2.2 Para cada turma, buscar o acumulado via count()
+        // 2.2 Para cada turma, buscar o acumulado a partir da coleção de agregação student_stats
         const sortedClasses = Object.keys(studentsPerClass).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
         
         for (const cls of sortedClasses) {
-            // Contagem total de registros da turma no ano (excluindo TR)
-            const totalSnap = await attendanceRef
+            const statsSnap = await adminDb.collection("student_stats")
                 .where("studentClass", "==", cls)
-                .where("date", ">=", LOCK_DATE)
-                .where("status", "in", ["P", "F", "D", "A"])
-                .count()
-                .get();
-            
-            // Contagem de presenças da turma no ano
-            // Nota: Como 'in' custa o mesmo que queries separadas, mas é mais limpo
-            const presenceSnap = await attendanceRef
-                .where("studentClass", "==", cls)
-                .where("date", ">=", LOCK_DATE)
-                .where("status", "in", ["P", "D", "A"])
-                .count()
                 .get();
 
-            yearTotalPerClass[cls] = totalSnap.data().count;
-            yearPresencePerClass[cls] = presenceSnap.data().count;
+            let totalClassDays = 0;
+            let totalClassPresences = 0;
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            statsSnap.docs.forEach((doc: any) => {
+                const data = doc.data();
+                totalClassDays += Number(data.totalDays || 0);
+                totalClassPresences += Number(data.presences || (data.totalDays - data.absences) || 0);
+            });
+
+            yearTotalPerClass[cls] = totalClassDays;
+            yearPresencePerClass[cls] = totalClassPresences;
         }
 
         const missingClasses = sortedClasses.filter(cls => !completedClassesToday.has(cls));

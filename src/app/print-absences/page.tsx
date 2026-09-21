@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { Suspense } from "react";
 
@@ -100,12 +100,11 @@ function PrintAbsencesContent() {
                 const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
                 
                 const completedClassesToday = new Set<string>();
-                const LOCK_DATE = "2026-04-06";
                 const absencesPromises: Promise<void>[] = [];
                 const absences: Record<string, { name: string; id: number; presenceRate: number }[]> = {};
 
-                snapshot.docs.forEach(doc => {
-                    const data = doc.data() as AttendanceRecord;
+                snapshot.docs.forEach(docSnap => {
+                    const data = docSnap.data() as AttendanceRecord;
                     const clsNorm = normalizeClassName(data.studentClass);
                     completedClassesToday.add(clsNorm);
 
@@ -115,26 +114,18 @@ function PrintAbsencesContent() {
                         }
                         
                         const fetchStudentData = async () => {
-                            const attendanceRef = collection(db, "attendance");
-                            const qStudent = data.studentFirestoreId
-                                ? query(attendanceRef, where("studentFirestoreId", "==", data.studentFirestoreId))
-                                : query(attendanceRef, where("studentId", "==", data.studentId));
-                            const studentAttendanceSnap = await getDocs(qStudent);
-                            
-                            let total = 0;
-                            let totalAbsences = 0;
-                            
-                            studentAttendanceSnap.docs.forEach(d => {
-                                const rec = d.data() as AttendanceRecord & { date: string };
-                                if (rec.date >= LOCK_DATE && rec.status !== "TR") {
-                                    total++;
-                                    if (rec.status === "F") {
-                                        totalAbsences++;
-                                    }
+                            let presenceRate = 0;
+                            if (data.studentFirestoreId) {
+                                const statsRef = doc(db, "student_stats", data.studentFirestoreId);
+                                const statsSnap = await getDoc(statsRef);
+                                if (statsSnap.exists()) {
+                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                    const statsData = statsSnap.data() as any;
+                                    const totalDays = Number(statsData?.totalDays || 0);
+                                    const absences = Number(statsData?.absences || 0);
+                                    presenceRate = totalDays > 0 ? Math.round(((totalDays - absences) / totalDays) * 100) : 0;
                                 }
-                            });
-                            
-                            const presenceRate = total > 0 ? Math.round(((total - totalAbsences) / total) * 100) : 0;
+                            }
 
                             absences[clsNorm].push({ name: data.studentName, id: data.studentId, presenceRate });
                         };

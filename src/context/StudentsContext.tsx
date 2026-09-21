@@ -43,8 +43,6 @@ export function StudentsProvider({ children }: { children: React.ReactNode }) {
                         if (Array.isArray(parsed) && parsed.length > 0) {
                             setStudents(parsed);
                             setLoading(false);
-                            // Background fetch to update cache silently
-                            fetchFromFirestoreSilently();
                             return;
                         }
                     } catch (e) {
@@ -88,29 +86,6 @@ export function StudentsProvider({ children }: { children: React.ReactNode }) {
             localStorage.setItem(CACHE_KEY, JSON.stringify(list));
         }
         setLoading(false);
-    };
-
-    const fetchFromFirestoreSilently = async () => {
-        try {
-            if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
-                return;
-            }
-            const snap = await getDocs(collection(db, "students"));
-            const list = snap.docs.map(d => ({
-                firestoreId: d.id,
-                name: (d.data().name as string) || "",
-                class: (d.data().class as string) || "",
-                id: Number(d.data().id || 0),
-                status: d.data().status as string,
-                dispensed: d.data().dispensed
-            })) as Student[];
-
-            list.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-            setStudents(list);
-            localStorage.setItem(CACHE_KEY, JSON.stringify(list));
-        } catch (e) {
-            console.warn("Silent background fetch of students failed:", e);
-        }
     };
 
     useEffect(() => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { collection, writeBatch, doc, getDoc, setDoc, serverTimestamp, deleteDoc, addDoc, query, where, getDocs } from "firebase/firestore";
+import { collection, writeBatch, doc, getDoc, setDoc, serverTimestamp, deleteDoc, addDoc, query, where, getDocs, increment } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { useAuth } from "@/context/AuthContext";
 import { useStudents } from "@/context/StudentsContext";
@@ -33,6 +33,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [isUpdateMode, setIsUpdateMode] = useState(false);
+    const [existingTodayStatus, setExistingTodayStatus] = useState<Record<string, AttendanceStatus>>({});
 
     // States for Modals
     const [deleteCandidate, setDeleteCandidate] = useState<{ id: string, name: string } | null>(null);
@@ -275,6 +276,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 });
 
                 setAttendance(initialAttendance);
+                setExistingTodayStatus(existingMap);
                 setDispensedStudents(initialDispensed);
                 if (Object.keys(existingMap).length > 0) {
                     setIsUpdateMode(true);
@@ -510,11 +512,14 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             let dispensedCount = 0;
             let transferCount = 0;
 
+            const newExistingMap: Record<string, AttendanceStatus> = { ...existingTodayStatus };
+
             students.forEach((s) => {
                 // Ao criar um ID com base na data + aluno, garantimos a sobrescrita (merge)
                 const docId = `att_${s.firestoreId}_${dateKey}`;
                 const docRef = doc(db, "attendance", docId);
                 const currentStatus = attendance[s.firestoreId] || "P";
+                const oldStatus = existingTodayStatus[s.firestoreId];
 
                 if (currentStatus === "P" || currentStatus === "A") presentCount++;
                 else if (currentStatus === "F") absentCount++;
@@ -531,6 +536,38 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     teacher: user?.email || "professor",
                     timestamp: serverTimestamp(),
                 }, { merge: true });
+
+                // Calcular deltas para a coleção de agregação student_stats
+                const oldTotal = (oldStatus && oldStatus !== "TR") ? 1 : 0;
+                const newTotal = (currentStatus !== "TR") ? 1 : 0;
+                const totalDelta = newTotal - oldTotal;
+
+                const oldAbsence = (oldStatus === "F") ? 1 : 0;
+                const newAbsence = (currentStatus === "F") ? 1 : 0;
+                const absenceDelta = newAbsence - oldAbsence;
+
+                const oldPresence = (oldStatus === "P" || oldStatus === "A") ? 1 : 0;
+                const newPresence = (currentStatus === "P" || currentStatus === "A") ? 1 : 0;
+                const presenceDelta = newPresence - oldPresence;
+
+                const oldDispensed = (oldStatus === "D") ? 1 : 0;
+                const newDispensed = (currentStatus === "D") ? 1 : 0;
+                const dispensedDelta = newDispensed - oldDispensed;
+
+                const statsRef = doc(db, "student_stats", s.firestoreId);
+                batch.set(statsRef, {
+                    studentFirestoreId: s.firestoreId,
+                    studentId: s.id,
+                    studentName: s.name,
+                    studentClass: classNameNorm,
+                    totalDays: increment(totalDelta),
+                    absences: increment(absenceDelta),
+                    presences: increment(presenceDelta),
+                    dispensed: increment(dispensedDelta),
+                    updatedAt: serverTimestamp()
+                }, { merge: true });
+
+                newExistingMap[s.firestoreId] = currentStatus;
             });
 
             // Registrar Resumo Diário para Otimização de Leituras
@@ -571,14 +608,8 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             });
 
             await batch.commit();
+            setExistingTodayStatus(newExistingMap);
             setIsUpdateMode(true);
-
-            // Dispara os e-mails em segundo plano (sem travar a tela)
-            const queryParams = user?.email ? `loggedUserEmail=${encodeURIComponent(user.email)}` : '';
-            
-            // 1. Relatório de Faltas (Busca Ativa)
-            fetch(`/api/cron/send-report?${queryParams}`).catch(console.error);
-
 
             setShowSuccessModal(true);
             setFeedback(null);
