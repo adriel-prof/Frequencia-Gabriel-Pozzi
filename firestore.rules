@@ -53,6 +53,13 @@ service cloud.firestore {
       allow read, create: if isProf();
       allow update, delete: if isAdmin();
     }
+
+    // Regras da coleção 'student_stats'
+    match /student_stats/{docId} {
+      allow read: if isProf();
+      allow create, update: if isProf(); // Permite atualizar estatísticas acumuladas do aluno
+      allow delete: if isAdmin();
+    }
     
     // Regras da coleção 'settings'
     match /settings/{docId} {
