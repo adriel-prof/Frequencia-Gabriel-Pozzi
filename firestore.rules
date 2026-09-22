@@ -60,6 +60,13 @@ service cloud.firestore {
       allow create, update: if isProf(); // Permite atualizar estatísticas acumuladas do aluno
       allow delete: if isAdmin();
     }
+
+    // Regras da coleção 'absence_justifications'
+    match /absence_justifications/{docId} {
+      allow read: if isProf();
+      allow create, update: if isProf(); // Permite registrar e alterar o motivo da falta na Busca Ativa
+      allow delete: if isAdmin();
+    }
     
     // Regras da coleção 'settings'
     match /settings/{docId} {
