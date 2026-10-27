@@ -1063,7 +1063,7 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                                             : `Dispensado de ${formatDateBR(dispensaDates[0])} até ${formatDateBR(dispensaDates[dispensaDates.length - 1])}.`}
                                     </p>
                                     <p className="text-[11px] text-amber-700 leading-relaxed mt-1">
-                                        Fins de semana e datas bloqueadas não contam. Nesses dias o aluno já aparecerá como "D" automaticamente na chamada.
+                                        Fins de semana e datas bloqueadas não contam. Nesses dias o aluno já aparecerá como &quot;D&quot; automaticamente na chamada.
                                     </p>
                                 </div>
                             )}
