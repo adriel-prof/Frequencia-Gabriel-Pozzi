@@ -32,7 +32,7 @@ const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().re
 
 
 export default function DashboardPage() {
-    const { students: globalStudents, loading: studentsLoading } = useStudents();
+    const { students: globalStudents, loading: studentsLoading, error: studentsError } = useStudents();
     const [records, setRecords] = useState<AttendanceRecord[]>([]);
     const [students, setStudents] = useState<Student[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -99,6 +99,11 @@ export default function DashboardPage() {
 
     return (
         <div className="space-y-6 animate-fade-in">
+            {studentsError && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-semibold flex items-center justify-between">
+                    <span>⚠️ {studentsError}</span>
+                </div>
+            )}
             <div className="flex flex-col md:flex-row md:items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-gray-100 gap-4">
                 <div className="flex items-center gap-4">
                     <h2 className="font-bold text-gray-800">Filtrar:</h2>
@@ -200,20 +205,31 @@ export default function DashboardPage() {
                                 let totalPresences = 0;
                                 let totalAbsences = 0;
 
-                                classStudents.forEach(s => {
-                                    if (s.status === "TR") return;
-                                    const record = classRecords.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
-                                    if (record) {
-                                        if (record.status === "TR") return;
-                                        if (record.status === "P" || record.status === "A") {
+                                if (classStudents.length === 0 && classRecords.length > 0) {
+                                    classRecords.forEach(r => {
+                                        if (r.status === "TR") return;
+                                        if (r.status === "P" || r.status === "A") {
                                             totalPresences++;
-                                        } else if (record.status === "F") {
+                                        } else if (r.status === "F") {
                                             totalAbsences++;
                                         }
-                                    } else {
-                                        totalPresences++;
-                                    }
-                                });
+                                    });
+                                } else {
+                                    classStudents.forEach(s => {
+                                        if (s.status === "TR") return;
+                                        const record = classRecords.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
+                                        if (record) {
+                                            if (record.status === "TR") return;
+                                            if (record.status === "P" || record.status === "A") {
+                                                totalPresences++;
+                                            } else if (record.status === "F") {
+                                                totalAbsences++;
+                                            }
+                                        } else {
+                                            totalPresences++;
+                                        }
+                                    });
+                                }
 
                                 const percentage = totalPresences + totalAbsences > 0
                                     ? Math.round((totalPresences / (totalPresences + totalAbsences)) * 100)
@@ -270,20 +286,31 @@ export default function DashboardPage() {
                 let totalPresences = 0;
                 let totalAbsences = 0;
 
-                classStudents.forEach(s => {
-                    if (s.status === "TR") return;
-                    const record = classRecords.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
-                    if (record) {
-                        if (record.status === "TR") return;
-                        if (record.status === "P" || record.status === "A") {
+                if (classStudents.length === 0 && classRecords.length > 0) {
+                    classRecords.forEach(r => {
+                        if (r.status === "TR") return;
+                        if (r.status === "P" || r.status === "A") {
                             totalPresences++;
-                        } else if (record.status === "F") {
+                        } else if (r.status === "F") {
                             totalAbsences++;
                         }
-                    } else {
-                        totalPresences++;
-                    }
-                });
+                    });
+                } else {
+                    classStudents.forEach(s => {
+                        if (s.status === "TR") return;
+                        const record = classRecords.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
+                        if (record) {
+                            if (record.status === "TR") return;
+                            if (record.status === "P" || record.status === "A") {
+                                totalPresences++;
+                            } else if (record.status === "F") {
+                                totalAbsences++;
+                            }
+                        } else {
+                            totalPresences++;
+                        }
+                    });
+                }
 
                 return (
                     <div key={cls} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">

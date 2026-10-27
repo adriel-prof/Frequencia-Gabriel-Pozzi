@@ -65,3 +65,29 @@ export async function fetchBrasilAPIHolidays(year: number): Promise<{ date: stri
     }
 }
 
+
+/**
+ * Retorna as próximas N datas letivas (ignora fins de semana e datas bloqueadas),
+ * começando em startDateStr (inclusive). Formato "YYYY-MM-DD".
+ */
+export function getNextSchoolDays(startDateStr: string, count: number, blockedDates: Record<string, string> = {}): string[] {
+    const parts = startDateStr.split("-");
+    if (parts.length !== 3 || count < 1) return [];
+
+    const current = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    const result: string[] = [];
+    let guard = 0;
+
+    while (result.length < count && guard < 730) {
+        const yyyy = current.getFullYear();
+        const mm = String(current.getMonth() + 1).padStart(2, "0");
+        const dd = String(current.getDate()).padStart(2, "0");
+        const dateStr = `${yyyy}-${mm}-${dd}`;
+        if (!isWeekend(dateStr) && !blockedDates[dateStr]) {
+            result.push(dateStr);
+        }
+        current.setDate(current.getDate() + 1);
+        guard++;
+    }
+    return result;
+}

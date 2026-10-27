@@ -27,6 +27,17 @@ export type MockBlockedDate = {
     createdAt: string;
 };
 
+export type MockMedicalDispensation = {
+    studentFirestoreId: string;
+    studentName: string;
+    studentClass: string;
+    startDate: string;
+    endDate: string;
+    dates: string[];
+    days: number;
+    createdBy: string;
+};
+
 // 1. Roster inicial de estudantes reais (alta fidelidade extraída do Firestore de produção)
 const INITIAL_STUDENTS: MockStudent[] = [
     // --- 1°A (36 alunos) ---
@@ -117,7 +128,8 @@ const STORAGE_KEYS = {
     STUDENTS: "mock_students",
     ATTENDANCE: "mock_attendance",
     DISPENSED: "mock_dispensed",
-    BLOCKED_DATES: "mock_blocked_dates"
+    BLOCKED_DATES: "mock_blocked_dates",
+    MEDICAL_DISPENSATIONS: "mock_medical_dispensations"
 };
 
 // Helpers para acesso ao LocalStorage com tratamento de ambiente SSR (Next.js)
@@ -227,6 +239,27 @@ export const mockDb = {
         let list = getFromStorage<string[]>(STORAGE_KEYS.DISPENSED, INITIAL_DISPENSED);
         list = list.filter(id => id !== firestoreId);
         setToStorage(STORAGE_KEYS.DISPENSED, list);
+    },
+
+    // DISPENSAS MÉDICAS DE MÚLTIPLOS DIAS
+    getMedicalDispensations: (): MockMedicalDispensation[] => {
+        initializeMockDatabase();
+        return getFromStorage<MockMedicalDispensation[]>(STORAGE_KEYS.MEDICAL_DISPENSATIONS, []);
+    },
+
+    saveMedicalDispensation: (dispensation: MockMedicalDispensation): void => {
+        initializeMockDatabase();
+        const list = getFromStorage<MockMedicalDispensation[]>(STORAGE_KEYS.MEDICAL_DISPENSATIONS, [])
+            .filter(d => d.studentFirestoreId !== dispensation.studentFirestoreId);
+        list.push(dispensation);
+        setToStorage(STORAGE_KEYS.MEDICAL_DISPENSATIONS, list);
+    },
+
+    removeMedicalDispensation: (studentFirestoreId: string): void => {
+        initializeMockDatabase();
+        const list = getFromStorage<MockMedicalDispensation[]>(STORAGE_KEYS.MEDICAL_DISPENSATIONS, [])
+            .filter(d => d.studentFirestoreId !== studentFirestoreId);
+        setToStorage(STORAGE_KEYS.MEDICAL_DISPENSATIONS, list);
     },
 
     // CHAMADAS / PRESENÇA (ATTENDANCE)

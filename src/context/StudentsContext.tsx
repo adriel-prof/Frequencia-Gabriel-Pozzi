@@ -30,44 +30,26 @@ export function StudentsProvider({ children }: { children: React.ReactNode }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchStudents = useCallback(async (forceRemote = false) => {
-        setLoading(true);
-        setError(null);
+    const loadFromCache = (): Student[] | null => {
+        if (typeof window === "undefined") return null;
         try {
-            // Check local storage cache if available and not forcing remote
-            if (!forceRemote && typeof window !== "undefined") {
-                const cachedData = localStorage.getItem(CACHE_KEY);
-                if (cachedData) {
-                    try {
-                        const parsed = JSON.parse(cachedData);
-                        if (Array.isArray(parsed) && parsed.length > 0) {
-                            setStudents(parsed);
-                            setLoading(false);
-                            return;
-                        }
-                    } catch (e) {
-                        console.warn("Failed to parse cached students, re-fetching:", e);
-                    }
+            const cachedData = localStorage.getItem(CACHE_KEY);
+            if (cachedData) {
+                const parsed = JSON.parse(cachedData);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    return parsed;
                 }
             }
-
-            await fetchFromFirestore();
-        } catch (err: unknown) {
-            console.error("Error fetching students in context:", err);
-            const msg = err instanceof Error ? err.message : "Erro ao carregar lista de alunos";
-            setError(msg);
-            setLoading(false);
+        } catch (e) {
+            console.warn("Failed to parse cached students:", e);
         }
-    }, []);
+        return null;
+    };
 
-    const fetchFromFirestore = async () => {
+    const fetchFromFirestore = async (): Promise<Student[]> => {
         if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
             const { mockDb } = await import("@/lib/mockDatabase");
-            const list = mockDb.getStudents();
-            setStudents(list);
-            localStorage.setItem(CACHE_KEY, JSON.stringify(list));
-            setLoading(false);
-            return;
+            return mockDb.getStudents();
         }
 
         const snap = await getDocs(collection(db, "students"));
@@ -81,12 +63,59 @@ export function StudentsProvider({ children }: { children: React.ReactNode }) {
         })) as Student[];
 
         list.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-        setStudents(list);
-        if (typeof window !== "undefined") {
-            localStorage.setItem(CACHE_KEY, JSON.stringify(list));
+        return list;
+    };
+
+    const fetchStudents = useCallback(async (forceRemote = false) => {
+        setLoading(true);
+        setError(null);
+
+        // 1. Tentar carregar do cache se não estiver forçando busca remota
+        if (!forceRemote) {
+            const cached = loadFromCache();
+            if (cached) {
+                setStudents(cached);
+                setLoading(false);
+                return;
+            }
+        }
+
+        // 2. Buscar da rede com até 3 retentativas
+        let attempts = 0;
+        const maxAttempts = 3;
+        let lastError: unknown = null;
+
+        while (attempts < maxAttempts) {
+            try {
+                attempts++;
+                const list = await fetchFromFirestore();
+                setStudents(list);
+                if (typeof window !== "undefined") {
+                    localStorage.setItem(CACHE_KEY, JSON.stringify(list));
+                }
+                setLoading(false);
+                return;
+            } catch (err) {
+                lastError = err;
+                console.warn(`Tentativa ${attempts}/${maxAttempts} de buscar alunos falhou:`, err);
+                if (attempts < maxAttempts) {
+                    await new Promise(res => setTimeout(res, 1000 * attempts));
+                }
+            }
+        }
+
+        // 3. Em caso de falha após retentativas, usar cache como fallback emergencial se disponível
+        console.error("Erro ao carregar lista de alunos após retentativas:", lastError);
+        const cachedFallback = loadFromCache();
+        if (cachedFallback) {
+            setStudents(cachedFallback);
+            setError("Instabilidade na conexão. Exibindo dados em cache.");
+        } else {
+            const msg = lastError instanceof Error ? lastError.message : "Erro ao carregar lista de alunos";
+            setError(msg);
         }
         setLoading(false);
-    };
+    }, []);
 
     useEffect(() => {
         fetchStudents();

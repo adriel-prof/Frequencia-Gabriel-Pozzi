@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation";
 
 export default function ChamadaPage() {
     const { user, role, loading: authLoading } = useAuth();
-    const { students, loading: studentsLoading, refreshStudents } = useStudents();
+    const { students, loading: studentsLoading, error: studentsError, refreshStudents } = useStudents();
     const router = useRouter();
     const [selectedClass, setSelectedClass] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<"chamada" | "historico">("chamada");
@@ -115,11 +115,29 @@ export default function ChamadaPage() {
             </header>
 
             <main className="p-4 pt-6 max-w-3xl mx-auto">
+                {studentsError && (
+                    <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-4">
+                        <p className="text-sm font-semibold text-amber-800">{studentsError}</p>
+                        <button
+                            onClick={() => refreshStudents()}
+                            className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+                        >
+                            Tentar Novamente
+                        </button>
+                    </div>
+                )}
+
                 {viewMode === "historico" ? (
                     <TeacherHistory />
                 ) : students.length === 0 ? (
-                    <div className="text-center py-10 bg-white rounded-2xl border border-gray-100 shadow-sm">
-                        <p className="text-gray-500 font-medium p-8">Nenhum aluno encontrado no banco de dados.</p>
+                    <div className="text-center py-10 bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center gap-4">
+                        <p className="text-gray-500 font-medium">Nenhum aluno encontrado no momento.</p>
+                        <button
+                            onClick={() => refreshStudents()}
+                            className="bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-4 py-2 rounded-xl transition-colors shadow-sm"
+                        >
+                            Recarregar Alunos
+                        </button>
                     </div>
                 ) : !selectedClass ? (
                     <div className="space-y-6 animate-fade-in">

@@ -5,7 +5,7 @@ import { collection, writeBatch, doc, getDoc, setDoc, serverTimestamp, deleteDoc
 import { db } from "@/lib/firebaseConfig";
 import { useAuth } from "@/context/AuthContext";
 import { useStudents } from "@/context/StudentsContext";
-import { isWeekend } from "@/lib/calendarUtils";
+import { isWeekend, getNextSchoolDays } from "@/lib/calendarUtils";
 
 type Student = {
     firestoreId: string;
@@ -18,7 +18,21 @@ type Student = {
 
 type AttendanceStatus = "P" | "F" | "D" | "A" | "TR";
 
+type DispensationInfo = {
+    startDate: string;
+    endDate: string;
+    dates: string[];
+    days: number;
+};
+
 const LOCK_DATE = "2026-04-06";
+const MAX_DISPENSA_DAYS = 60;
+const DISPENSA_QUICK_OPTIONS = [1, 2, 3, 5, 7, 10, 15];
+
+const formatDateBR = (date: string) => date.split("-").reverse().join("/");
+
+const isLocalhost = () =>
+    typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
 
 export function AttendanceList({ students, onSuccess }: { students: Student[], onSuccess?: () => void }) {
@@ -26,6 +40,11 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     const { students: globalStudents, refreshStudents } = useStudents();
     const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
     const [dispensedStudents, setDispensedStudents] = useState<Set<string>>(new Set());
+    // Dispensas médicas de múltiplos dias ativas hoje (por firestoreId do aluno)
+    const [dispensationInfo, setDispensationInfo] = useState<Record<string, DispensationInfo>>({});
+    const [dispensaCandidate, setDispensaCandidate] = useState<Student | null>(null);
+    const [dispensaDays, setDispensaDays] = useState<number>(1);
+    const [isSavingDispensa, setIsSavingDispensa] = useState(false);
     const [isAllowed, setIsAllowed] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [blockedDates, setBlockedDates] = useState<Record<string, string>>({});
@@ -182,6 +201,39 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
     }, []);
 
     const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
+
+    // Busca as dispensas médicas que cobrem a data de hoje
+    const fetchActiveDispensations = async (today: string): Promise<Record<string, DispensationInfo>> => {
+        const map: Record<string, DispensationInfo> = {};
+        try {
+            if (isLocalhost()) {
+                const { mockDb } = await import("@/lib/mockDatabase");
+                mockDb.getMedicalDispensations().forEach(d => {
+                    if (d.dates.includes(today)) {
+                        map[d.studentFirestoreId] = { startDate: d.startDate, endDate: d.endDate, dates: d.dates, days: d.days };
+                    }
+                });
+                return map;
+            }
+            const snap = await getDocs(query(collection(db, "medical_dispensations"), where("endDate", ">=", today)));
+            snap.docs.forEach(d => {
+                const data = d.data();
+                const dates: string[] = Array.isArray(data.dates) ? data.dates : [];
+                if (dates.includes(today)) {
+                    map[data.studentFirestoreId || d.id] = {
+                        startDate: data.startDate,
+                        endDate: data.endDate,
+                        dates,
+                        days: data.days || dates.length
+                    };
+                }
+            });
+        } catch (err) {
+            console.error("Erro ao carregar dispensas médicas:", err);
+        }
+        return map;
+    };
+
     // Define padrão das presenças e valida regras de horário
     useEffect(() => {
         async function fetchCurrentStatus() {
@@ -190,6 +242,8 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             }
             try {
                 const today = new Date().toISOString().split("T")[0];
+                const activeDispensations = await fetchActiveDispensations(today);
+                setDispensationInfo(activeDispensations);
 
                 if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
@@ -207,13 +261,18 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     
                     students.forEach((s) => {
                         const hasExistingRecord = s.firestoreId in existingMap;
+                        const hasActiveDispensation = s.firestoreId in activeDispensations;
                         if (s.status === "TR") {
                             initialAttendance[s.firestoreId] = "TR";
                         } else if (hasExistingRecord) {
                             initialAttendance[s.firestoreId] = existingMap[s.firestoreId];
-                            if (existingMap[s.firestoreId] === "D") {
+                            if (existingMap[s.firestoreId] === "D" || hasActiveDispensation) {
                                 initialDispensed.add(s.firestoreId);
                             }
+                        } else if (hasActiveDispensation) {
+                            // Dispensa médica de vários dias: já vem marcado como D
+                            initialAttendance[s.firestoreId] = "D";
+                            initialDispensed.add(s.firestoreId);
                         } else {
                             initialAttendance[s.firestoreId] = "P";
                         }
@@ -263,13 +322,18 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 // 2. Preencher o estado inicial
                 students.forEach((s) => {
                     const hasExistingRecord = s.firestoreId in existingMap;
+                    const hasActiveDispensation = s.firestoreId in activeDispensations;
                     if (s.status === "TR") {
                         initialAttendance[s.firestoreId] = "TR";
                     } else if (hasExistingRecord) {
                         initialAttendance[s.firestoreId] = existingMap[s.firestoreId];
-                        if (existingMap[s.firestoreId] === "D") {
+                        if (existingMap[s.firestoreId] === "D" || hasActiveDispensation) {
                             initialDispensed.add(s.firestoreId);
                         }
+                    } else if (hasActiveDispensation) {
+                        // Dispensa médica de vários dias: já vem marcado como D
+                        initialAttendance[s.firestoreId] = "D";
+                        initialDispensed.add(s.firestoreId);
                     } else {
                         initialAttendance[s.firestoreId] = "P";
                     }
@@ -327,21 +391,105 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
         setAttendance((prev) => ({ ...prev, [firestoreId]: status }));
     };
 
-    const toggleDispensa = (student: Student) => {
-        const newDispensed = !dispensedStudents.has(student.firestoreId);
+    const applyDispensaState = (firestoreId: string, dispensed: boolean) => {
         setDispensedStudents(prev => {
             const next = new Set(prev);
-            if (newDispensed) {
-                next.add(student.firestoreId);
+            if (dispensed) {
+                next.add(firestoreId);
             } else {
-                next.delete(student.firestoreId);
+                next.delete(firestoreId);
             }
             return next;
         });
         setAttendance(prev => ({
             ...prev,
-            [student.firestoreId]: newDispensed ? "D" : "P"
+            [firestoreId]: dispensed ? "D" : "P"
         }));
+    };
+
+    // Abre o modal perguntando por quantos dias o aluno ficará dispensado
+    const openDispensaModal = (student: Student) => {
+        setDispensaDays(1);
+        setDispensaCandidate(student);
+    };
+
+    // Dias letivos que serão cobertos pela dispensa em edição (ignora fins de semana e datas bloqueadas)
+    const dispensaDates = useMemo(() => {
+        if (!dispensaCandidate) return [];
+        const today = new Date().toISOString().split("T")[0];
+        const days = Math.min(Math.max(Math.floor(dispensaDays) || 1, 1), MAX_DISPENSA_DAYS);
+        return getNextSchoolDays(today, days, blockedDates);
+    }, [dispensaCandidate, dispensaDays, blockedDates]);
+
+    const confirmDispensa = async () => {
+        if (!dispensaCandidate || dispensaDates.length === 0) return;
+        const student = dispensaCandidate;
+        const today = new Date().toISOString().split("T")[0];
+        const record = {
+            studentFirestoreId: student.firestoreId,
+            studentName: student.name,
+            studentClass: normalizeClassName(student.class),
+            startDate: dispensaDates[0],
+            endDate: dispensaDates[dispensaDates.length - 1],
+            dates: dispensaDates,
+            days: dispensaDates.length,
+            createdBy: user?.email || "admin"
+        };
+
+        setIsSavingDispensa(true);
+        try {
+            if (isLocalhost()) {
+                const { mockDb } = await import("@/lib/mockDatabase");
+                mockDb.saveMedicalDispensation(record);
+            } else {
+                await setDoc(doc(db, "medical_dispensations", student.firestoreId), {
+                    ...record,
+                    createdAt: serverTimestamp()
+                });
+            }
+
+            if (dispensaDates.includes(today)) {
+                setDispensationInfo(prev => ({
+                    ...prev,
+                    [student.firestoreId]: { startDate: record.startDate, endDate: record.endDate, dates: record.dates, days: record.days }
+                }));
+                applyDispensaState(student.firestoreId, true);
+            } else {
+                alert(`Dispensa médica registrada de ${formatDateBR(record.startDate)} até ${formatDateBR(record.endDate)}. Hoje não é dia letivo, então ela passará a valer na próxima chamada.`);
+            }
+            setDispensaCandidate(null);
+        } catch (err) {
+            console.error("Erro ao salvar dispensa médica:", err);
+            alert("Erro ao salvar a dispensa médica. Tente novamente.");
+        } finally {
+            setIsSavingDispensa(false);
+        }
+    };
+
+    const removeDispensa = async (student: Student) => {
+        const today = new Date().toISOString().split("T")[0];
+        const info = dispensationInfo[student.firestoreId];
+        const remaining = info ? info.dates.filter(d => d > today).length : 0;
+        if (remaining > 0 && !confirm(`${student.name} está dispensado até ${formatDateBR(info.endDate)}. Remover a dispensa cancelará também os ${remaining} dia(s) restante(s). Deseja continuar?`)) {
+            return;
+        }
+        try {
+            if (isLocalhost()) {
+                const { mockDb } = await import("@/lib/mockDatabase");
+                mockDb.removeMedicalDispensation(student.firestoreId);
+            } else if (role === "admin") {
+                await deleteDoc(doc(db, "medical_dispensations", student.firestoreId));
+            }
+            setDispensationInfo(prev => {
+                const next = { ...prev };
+                delete next[student.firestoreId];
+                return next;
+            });
+            applyDispensaState(student.firestoreId, false);
+        } catch (err) {
+            console.error("Erro ao remover dispensa médica:", err);
+            alert("Erro ao remover a dispensa médica. Tente novamente.");
+        }
     };
 
     const toggleTR = async (student: Student) => {
@@ -685,14 +833,19 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                                         <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-bold">TR - INTENÇÃO DE TRANSFERÊNCIA</span>
                                     )}
                                     {isDispensed && (
-                                        <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px] font-bold">DISPENSA MÉDICA</span>
+                                        <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                            DISPENSA MÉDICA
+                                            {dispensationInfo[student.firestoreId] && dispensationInfo[student.firestoreId].dates.length > 1 && (
+                                                <> &bull; ATÉ {formatDateBR(dispensationInfo[student.firestoreId].endDate)}</>
+                                            )}
+                                        </span>
                                     )}
                                     {role === "admin" && (
                                         <>
                                             &bull;
                                             <button
                                                 disabled={isTR}
-                                                onClick={() => toggleDispensa(student)}
+                                                onClick={() => isDispensed ? removeDispensa(student) : openDispensaModal(student)}
                                                 className={`font-medium cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${isDispensed ? 'text-amber-600 hover:text-amber-800' : 'text-amber-500 hover:text-amber-700'}`}
                                             >
                                                 {isDispensed ? 'Remover Dispensa' : 'Dispensa Médica'}
@@ -840,6 +993,101 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     </div>
                 </div>
             )}
+            {/* Modal de Dispensa Médica (quantidade de dias) */}
+            {dispensaCandidate && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl space-y-6">
+                        <div className="text-center">
+                            <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto border-4 border-amber-50 mb-4 shadow-inner">
+                                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                            <h3 className="text-2xl font-extrabold text-gray-900 tracking-tight">Dispensa Médica</h3>
+                            <p className="text-gray-500 mt-1 text-sm">
+                                Por quantos dias <strong className="text-gray-900 uppercase font-black">{dispensaCandidate.name}</strong> ficará dispensado?
+                            </p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                    Quantidade de dias letivos (incluindo hoje)
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setDispensaDays(d => Math.max(1, (Math.floor(d) || 1) - 1))}
+                                        className="w-12 h-12 rounded-xl bg-gray-100 text-gray-700 font-bold text-xl hover:bg-gray-200 transition-colors"
+                                        aria-label="Diminuir dias"
+                                    >
+                                        −
+                                    </button>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max={MAX_DISPENSA_DAYS}
+                                        value={Number.isNaN(dispensaDays) ? "" : dispensaDays}
+                                        onChange={e => setDispensaDays(e.target.value === "" ? NaN : Math.min(Number(e.target.value), MAX_DISPENSA_DAYS))}
+                                        className="flex-1 h-12 px-4 rounded-xl border border-gray-200 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all bg-gray-50 font-bold text-gray-900 text-center text-lg"
+                                        autoFocus
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setDispensaDays(d => Math.min(MAX_DISPENSA_DAYS, (Math.floor(d) || 0) + 1))}
+                                        className="w-12 h-12 rounded-xl bg-gray-100 text-gray-700 font-bold text-xl hover:bg-gray-200 transition-colors"
+                                        aria-label="Aumentar dias"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                                <div className="flex flex-wrap gap-2 mt-3">
+                                    {DISPENSA_QUICK_OPTIONS.map(n => (
+                                        <button
+                                            key={n}
+                                            type="button"
+                                            onClick={() => setDispensaDays(n)}
+                                            className={`px-3 py-1.5 rounded-lg text-sm font-bold border transition-colors ${dispensaDays === n ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-600 border-gray-200 hover:bg-amber-50'}`}
+                                        >
+                                            {n} {n === 1 ? 'dia' : 'dias'}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {dispensaDates.length > 0 && (
+                                <div className="bg-amber-50 rounded-xl p-3 border border-amber-200/60">
+                                    <p className="text-sm text-amber-800 font-semibold">
+                                        {dispensaDates.length === 1
+                                            ? `Dispensado em ${formatDateBR(dispensaDates[0])}.`
+                                            : `Dispensado de ${formatDateBR(dispensaDates[0])} até ${formatDateBR(dispensaDates[dispensaDates.length - 1])}.`}
+                                    </p>
+                                    <p className="text-[11px] text-amber-700 leading-relaxed mt-1">
+                                        Fins de semana e datas bloqueadas não contam. Nesses dias o aluno já aparecerá como "D" automaticamente na chamada.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setDispensaCandidate(null)}
+                                className="flex-1 bg-gray-100 text-gray-700 font-bold py-3.5 px-4 rounded-xl hover:bg-gray-200 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={confirmDispensa}
+                                disabled={isSavingDispensa || dispensaDates.length === 0 || Number.isNaN(dispensaDays) || dispensaDays < 1}
+                                className="flex-1 bg-amber-500 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-amber-600 transition-colors shadow-lg shadow-amber-500/30 disabled:opacity-50 flex justify-center items-center"
+                            >
+                                {isSavingDispensa ? "Salvando..." : "Confirmar"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Modal de Exclusão (Pop-up) */}
             {deleteCandidate && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-fade-in">
