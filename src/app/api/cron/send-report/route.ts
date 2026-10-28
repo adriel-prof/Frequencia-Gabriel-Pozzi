@@ -8,42 +8,102 @@ export async function GET(request: Request) {
     try {
         const today = new Date().toISOString().split("T")[0];
 
-        // OTIMIZAÇÃO: Busca apenas registros de HOJE para identificar pendências e faltosos
+        // OTIMIZAÇÃO: Busca registros de HOJE, alunos ativos e dispensas médicas ativas em paralelo
         const attendanceRef = adminDb.collection("attendance");
-        const todaySnapshot = await attendanceRef.where("date", "==", today).get();
+        const [todaySnapshot, studentsSnap, dispSnap] = await Promise.all([
+            attendanceRef.where("date", "==", today).get(),
+            adminDb.collection("students").get(),
+            adminDb.collection("medical_dispensations").where("endDate", ">=", today).get()
+        ]);
 
         // Agrupar faltosos por turma e registrar turmas concluídas
         type AttendanceDoc = { studentClass: string; studentId: number; studentName: string; status: string; date: string; studentFirestoreId?: string; };
+        type ActiveStudentInfo = { firestoreId: string; id: number; name: string; class: string; status?: string };
 
         const absencesByClass: Record<string, { studentName: string; studentId: number; presenceRate: number }[]> = {};
         const completedClassesToday = new Set<string>();
 
         const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
+
+        const dispensedIds = new Set<string>();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        dispSnap.docs.forEach((d: any) => {
+            const dData = d.data();
+            const dates: string[] = Array.isArray(dData.dates) ? dData.dates : [];
+            if (dates.includes(today)) {
+                dispensedIds.add(dData.studentFirestoreId || d.id);
+            }
+        });
+
+        const activeById = new Map<string, ActiveStudentInfo>();
+        const activeByName = new Map<string, ActiveStudentInfo>();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        studentsSnap.docs.forEach((d: any) => {
+            const sData = d.data();
+            if (sData.status === "TR") return;
+            const info: ActiveStudentInfo = {
+                firestoreId: d.id,
+                id: Number(sData.id || 0),
+                name: sData.name || "",
+                class: sData.class || "",
+                status: sData.status
+            };
+            activeById.set(d.id, info);
+            if (info.name) {
+                activeByName.set(info.name.trim().toUpperCase(), info);
+            }
+        });
         
-        const todayAbsences: AttendanceDoc[] = [];
+        const todayAbsences: { clsNorm: string; studentId: number; studentName: string; studentFirestoreId?: string }[] = [];
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         todaySnapshot.docs.forEach((doc: any) => {
             const data = doc.data() as AttendanceDoc;
             const clsNorm = normalizeClassName(data.studentClass);
             completedClassesToday.add(clsNorm);
+
+            let fId = data.studentFirestoreId;
+            if (!fId && typeof doc.id === "string") {
+                const match = doc.id.match(/^att_(.+?)_\d{8}$/);
+                if (match) fId = match[1];
+            }
+
+            const activeStudent = fId
+                ? activeById.get(fId)
+                : activeByName.get((data.studentName || "").trim().toUpperCase());
+
+            // Ignora alunos TR, excluídos ou transferidos para outra turma
+            if (!activeStudent) return;
+            if (normalizeClassName(activeStudent.class) !== clsNorm) return;
+
+            // Ignora alunos com dispensa médica ativa hoje
+            if (dispensedIds.has(activeStudent.firestoreId)) return;
+
             if (data.status === "F") {
-                todayAbsences.push(data);
+                todayAbsences.push({
+                    clsNorm,
+                    studentId: activeStudent.id || data.studentId,
+                    studentName: activeStudent.name || data.studentName,
+                    studentFirestoreId: activeStudent.firestoreId
+                });
             }
         });
 
         // Para cada aluno que faltou HOJE, buscamos a estatística acumulada em student_stats (1 leitura por aluno)
         for (const student of todayAbsences) {
-            const clsNorm = normalizeClassName(student.studentClass);
+            const clsNorm = student.clsNorm;
             let presenceRate = 0;
 
             if (student.studentFirestoreId) {
                 const statsSnap = await adminDb.collection("student_stats").doc(student.studentFirestoreId).get();
                 if (statsSnap.exists) {
                     const statsData = statsSnap.data();
-                    const totalDays = Number(statsData?.totalDays || 0);
-                    const absences = Number(statsData?.absences || 0);
-                    presenceRate = totalDays > 0 ? Math.round(((totalDays - absences) / totalDays) * 100) : 0;
+                    const presences = Number(statsData?.presences || 0);
+                    const stuAbsences = Number(statsData?.absences || 0);
+                    const evalDays = (presences + stuAbsences) > 0
+                        ? (presences + stuAbsences)
+                        : Math.max(0, Number(statsData?.totalDays || 0) - Number(statsData?.dispensed || 0));
+                    presenceRate = evalDays > 0 ? Math.round(((evalDays - stuAbsences) / evalDays) * 100) : 0;
                 }
             }
 
@@ -57,9 +117,6 @@ export async function GET(request: Request) {
             });
         }
 
-
-        // Buscar todas as turmas cadastradas nos alunos
-        const studentsSnap = await adminDb.collection("students").get();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const allClasses = (Array.from(new Set(studentsSnap.docs.filter((d: any) => d.data().status !== "TR").map((d: any) => normalizeClassName(d.data().class)))) as string[])
             .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));

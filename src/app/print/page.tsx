@@ -35,16 +35,25 @@ function PrintContent() {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     const studentsList = mockDb.getStudents().filter(s => s.status !== "TR");
                     const recordsData = mockDb.getAttendance(date || undefined) as unknown as AttendanceRecord[];
+                    const activeDisp = new Set<string>();
+                    mockDb.getMedicalDispensations().forEach(d => {
+                        if (date && Array.isArray(d.dates) && d.dates.includes(date)) {
+                            activeDisp.add(d.studentFirestoreId);
+                        }
+                    });
                     
-                    const stats: Record<string, { p: number; f: number }> = {};
+                    const stats: Record<string, { p: number; d: number; f: number }> = {};
                     const activeClasses = Array.from(new Set(recordsData.map(r => normalizeClassName(r.studentClass))));
 
                     activeClasses.forEach(clsNorm => {
-                        stats[clsNorm] = { p: 0, f: 0 };
+                        stats[clsNorm] = { p: 0, d: 0, f: 0 };
                         const classStudents = studentsList.filter(s => normalizeClassName(s.class) === clsNorm);
                         classStudents.forEach(s => {
                             const record = recordsData.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
-                            if (record) {
+                            if (activeDisp.has(s.firestoreId) || record?.status === "D") {
+                                stats[clsNorm].d += 1;
+                            } else if (record) {
+                                if (record.status === "TR") return;
                                 if (record.status === "P" || record.status === "A") {
                                     stats[clsNorm].p += 1;
                                 } else if (record.status === "F") {
@@ -57,8 +66,8 @@ function PrintContent() {
                     });
 
                     const result = Object.keys(stats).map(cls => {
-                        const total = stats[cls].p + stats[cls].f;
-                        const percentage = total === 0 ? 0 : Math.round((stats[cls].p / total) * 100);
+                        const total = stats[cls].p + stats[cls].d + stats[cls].f;
+                        const percentage = total === 0 ? 0 : Math.round(((stats[cls].p + stats[cls].d) / total) * 100);
                         return { className: cls, percentage };
                     });
 
@@ -70,32 +79,44 @@ function PrintContent() {
 
                 const studentsList = globalStudents.filter(s => s.status !== "TR");
 
-                // Busca registros de chamada diretamente para paridade total
+                // Busca registros de chamada e dispensas médicas ativas para paridade total
                 const q = query(collection(db, "attendance"), where("date", "==", date));
-                const snapshot = await getDocs(q);
+                const dispQ = query(collection(db, "medical_dispensations"), where("endDate", ">=", date));
+                const [snapshot, dispSnap] = await Promise.all([getDocs(q), getDocs(dispQ)]);
                 const recordsData = snapshot.docs.map(doc => doc.data() as AttendanceRecord);
+                const activeDisp = new Set<string>();
+                dispSnap.docs.forEach(d => {
+                    const data = d.data();
+                    if (date && Array.isArray(data.dates) && data.dates.includes(date)) {
+                        activeDisp.add(data.studentFirestoreId || d.id);
+                    }
+                });
 
-                const stats: Record<string, { p: number; f: number }> = {};
+                const stats: Record<string, { p: number; d: number; f: number }> = {};
                 
                 // Apenas turmas que possuem alguma chamada lançada no dia entram no placar impresso
                 const activeClasses = Array.from(new Set(recordsData.map(r => normalizeClassName(r.studentClass))));
 
                 activeClasses.forEach(clsNorm => {
-                    stats[clsNorm] = { p: 0, f: 0 };
+                    stats[clsNorm] = { p: 0, d: 0, f: 0 };
                     
                     // Alunos atuais da turma no banco
                     const classStudents = studentsList.filter(s => normalizeClassName(s.class) === clsNorm);
                     if (classStudents.length === 0) {
                         const classRecords = recordsData.filter(r => normalizeClassName(r.studentClass) === clsNorm);
                         classRecords.forEach(r => {
-                            if (r.status === "P" || r.status === "A") stats[clsNorm].p += 1;
+                            if (r.status === "TR") return;
+                            if ((r.studentFirestoreId && activeDisp.has(r.studentFirestoreId)) || r.status === "D") stats[clsNorm].d += 1;
+                            else if (r.status === "P" || r.status === "A") stats[clsNorm].p += 1;
                             else if (r.status === "F") stats[clsNorm].f += 1;
                         });
                     } else {
                         classStudents.forEach(s => {
                             if (s.status === "TR") return;
                             const record = recordsData.find(r => (r.studentFirestoreId && r.studentFirestoreId === s.firestoreId) || r.studentName === s.name);
-                            if (record) {
+                            if (activeDisp.has(s.firestoreId) || record?.status === "D") {
+                                stats[clsNorm].d += 1;
+                            } else if (record) {
                                 if (record.status === "TR") return;
                                 if (record.status === "P" || record.status === "A") {
                                     stats[clsNorm].p += 1;
@@ -110,8 +131,8 @@ function PrintContent() {
                 });
 
                 const result = Object.keys(stats).map(cls => {
-                    const total = stats[cls].p + stats[cls].f;
-                    const percentage = total === 0 ? 0 : Math.round((stats[cls].p / total) * 100);
+                    const total = stats[cls].p + stats[cls].d + stats[cls].f;
+                    const percentage = total === 0 ? 0 : Math.round(((stats[cls].p + stats[cls].d) / total) * 100);
                     return { className: cls, percentage };
                 });
 

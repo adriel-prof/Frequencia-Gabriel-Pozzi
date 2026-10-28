@@ -8,38 +8,84 @@ export async function GET(request: Request) {
     try {
         const today = new Date().toISOString().split("T")[0];
 
-        // 1. Buscar todos os alunos para saber o total por turma (USANDO ADMIN SDK)
-        const studentsSnap = await adminDb.collection("students").get();
-        const studentsPerClass: Record<string, number> = {};
+        // 1. Buscar todos os alunos, chamadas de hoje e dispensas médicas ativas (USANDO ADMIN SDK)
+        const attendanceRef = adminDb.collection("attendance");
+        const [studentsSnap, todaySnap, dispSnap] = await Promise.all([
+            adminDb.collection("students").get(),
+            attendanceRef.where("date", "==", today).get(),
+            adminDb.collection("medical_dispensations").where("endDate", ">=", today).get()
+        ]);
 
+        const studentsPerClass: Record<string, number> = {};
         const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
+
+        type ActiveStudentInfo = { firestoreId: string; name: string; class: string };
+        const activeById = new Map<string, ActiveStudentInfo>();
+        const activeByName = new Map<string, ActiveStudentInfo>();
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         studentsSnap.docs.forEach((doc: any) => {
-            if (doc.data().status === "TR") return;
-            const cls = normalizeClassName(doc.data().class);
+            const sData = doc.data();
+            if (sData.status === "TR") return;
+            const cls = normalizeClassName(sData.class);
             studentsPerClass[cls] = (studentsPerClass[cls] || 0) + 1;
+            const info: ActiveStudentInfo = {
+                firestoreId: doc.id,
+                name: sData.name || "",
+                class: cls
+            };
+            activeById.set(doc.id, info);
+            if (info.name) {
+                activeByName.set(info.name.trim().toUpperCase(), info);
+            }
         });
 
-        // 2. OTIMIZAÇÃO: Não buscamos mais todos os documentos. Usaremos count() por turma.
-        const attendanceRef = adminDb.collection("attendance");
+        const dispensedIds = new Set<string>();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        dispSnap.docs.forEach((d: any) => {
+            const dData = d.data();
+            const dates: string[] = Array.isArray(dData.dates) ? dData.dates : [];
+            if (dates.includes(today)) {
+                dispensedIds.add(dData.studentFirestoreId || d.id);
+            }
+        });
         
         // Agregadores específicos de HOJE
         const todayPresentPerClass: Record<string, number> = {};
+        const todayEvaluatedPerClass: Record<string, number> = {};
         const completedClassesToday = new Set<string>();
 
         // Agregadores do Ano (Acumulado)
         const yearPresencePerClass: Record<string, number> = {};
         const yearTotalPerClass: Record<string, number> = {};
 
-        // 2.1 Buscar dados de HOJE primeiro (para saber quem já fez a chamada)
-        const todaySnap = await attendanceRef.where("date", "==", today).get();
+        // 2.1 Processar dados de HOJE (ignorando alunos TR, excluídos ou transferidos, e tratando D como abonado)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         todaySnap.docs.forEach((doc: any) => {
             const data = doc.data();
             const clsNorm = normalizeClassName(data.studentClass);
             completedClassesToday.add(clsNorm);
-            if (data.status === "P" || data.status === "A") {
+
+            let fId = data.studentFirestoreId;
+            if (!fId && typeof doc.id === "string") {
+                const match = doc.id.match(/^att_(.+?)_\d{8}$/);
+                if (match) fId = match[1];
+            }
+
+            const activeStudent = fId
+                ? activeById.get(fId)
+                : activeByName.get((data.studentName || "").trim().toUpperCase());
+
+            if (!activeStudent || activeStudent.class !== clsNorm) return;
+
+            const effectiveStatus = dispensedIds.has(activeStudent.firestoreId) ? "D" : data.status;
+            if (effectiveStatus === "TR") return;
+
+            if (effectiveStatus === "P" || effectiveStatus === "A" || effectiveStatus === "D") {
                 todayPresentPerClass[clsNorm] = (todayPresentPerClass[clsNorm] || 0) + 1;
+                todayEvaluatedPerClass[clsNorm] = (todayEvaluatedPerClass[clsNorm] || 0) + 1;
+            } else if (effectiveStatus === "F") {
+                todayEvaluatedPerClass[clsNorm] = (todayEvaluatedPerClass[clsNorm] || 0) + 1;
             }
         });
 
@@ -57,8 +103,20 @@ export async function GET(request: Request) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             statsSnap.docs.forEach((doc: any) => {
                 const data = doc.data();
-                totalClassDays += Number(data.totalDays || 0);
-                totalClassPresences += Number(data.presences || (data.totalDays - data.absences) || 0);
+                const fId = data.studentFirestoreId || doc.id;
+                const activeStudent = activeById.get(fId);
+                // Ignora estatísticas de alunos TR, excluídos ou transferidos de turma
+                if (!activeStudent || activeStudent.class !== cls) return;
+
+                const presences = Number(data.presences || 0);
+                const absences = Number(data.absences || 0);
+                const dispensed = Number(data.dispensed || 0);
+                const evalDays = (presences + absences) > 0
+                    ? (presences + absences)
+                    : Math.max(0, Number(data.totalDays || 0) - dispensed);
+
+                totalClassDays += evalDays;
+                totalClassPresences += Math.max(0, evalDays - absences);
             });
 
             yearTotalPerClass[cls] = totalClassDays;
@@ -108,12 +166,13 @@ export async function GET(request: Request) {
         sortedClasses.forEach(cls => {
             const totalStudents = studentsPerClass[cls];
             const presentToday = todayPresentPerClass[cls] || 0;
+            const evaluatedToday = todayEvaluatedPerClass[cls] || totalStudents;
             const isCompletedToday = completedClassesToday.has(cls);
 
             // Porcentagem de HOJE
             let todayPercentage = 0;
-            if (isCompletedToday && totalStudents > 0) {
-                todayPercentage = Math.round((presentToday / totalStudents) * 100);
+            if (isCompletedToday && evaluatedToday > 0) {
+                todayPercentage = Math.round((presentToday / evaluatedToday) * 100);
             }
 
             // Porcentagem ACUMULADA (Ano)

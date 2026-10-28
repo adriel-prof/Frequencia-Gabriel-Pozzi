@@ -20,9 +20,13 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: 'Firebase Admin não inicializado.' }, { status: 500 });
         }
 
-        // 1. Buscar todos os alunos
-        const studentsSnap = await adminDb.collection("students").get();
+        // 1. Buscar todos os alunos e dispensas médicas
+        const [studentsSnap, dispSnap] = await Promise.all([
+            adminDb.collection("students").get(),
+            adminDb.collection("medical_dispensations").get()
+        ]);
         const studentsMap = new Map<string, { id: number; name: string; class: string; status?: string }>();
+        const dispensedDatesMap = new Map<string, Set<string>>();
         
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         studentsSnap.docs.forEach((doc: any) => {
@@ -30,9 +34,21 @@ export async function GET(request: Request) {
             studentsMap.set(doc.id, {
                 id: Number(data.id || 0),
                 name: data.name || "",
-                class: data.class || "",
+                class: (data.class || "").trim().toUpperCase().replace(/°/g, 'º'),
                 status: data.status
             });
+        });
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        dispSnap.docs.forEach((doc: any) => {
+            const data = doc.data();
+            const fId = data.studentFirestoreId || doc.id;
+            const dates: string[] = Array.isArray(data.dates) ? data.dates : [];
+            if (!dispensedDatesMap.has(fId)) {
+                dispensedDatesMap.set(fId, new Set());
+            }
+            const set = dispensedDatesMap.get(fId)!;
+            dates.forEach(d => set.add(d));
         });
 
         // 2. Buscar todas as chamadas a partir da LOCK_DATE
@@ -70,6 +86,11 @@ export async function GET(request: Request) {
             const data = doc.data();
             let fId = data.studentFirestoreId;
 
+            if (!fId && typeof doc.id === "string") {
+                const match = doc.id.match(/^att_(.+?)_\d{8}$/);
+                if (match) fId = match[1];
+            }
+
             if (!fId) {
                 // Tenta mapear pelo ID numérico / nome
                 for (const [sId, sData] of Array.from(studentsMap.entries())) {
@@ -81,17 +102,21 @@ export async function GET(request: Request) {
             }
 
             if (fId && statsPerStudent[fId]) {
-                const target = statsPerStudent[fId];
-                const status = data.status;
+                const studentInfo = studentsMap.get(fId);
+                if (studentInfo?.status === "TR") return;
 
-                if (status !== "TR") {
+                const target = statsPerStudent[fId];
+                const isDispensedDate = dispensedDatesMap.get(fId)?.has(data.date) || false;
+                const status = isDispensedDate ? "D" : data.status;
+
+                if (status === "D") {
+                    target.dispensed += 1;
+                } else if (status !== "TR") {
                     target.totalDays += 1;
                     if (status === "F") {
                         target.absences += 1;
                     } else if (status === "P" || status === "A") {
                         target.presences += 1;
-                    } else if (status === "D") {
-                        target.dispensed += 1;
                     }
                 }
             }

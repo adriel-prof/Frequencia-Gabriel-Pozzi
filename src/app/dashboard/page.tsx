@@ -40,11 +40,12 @@ export default function DashboardPage() {
 
     const [selectedClass, setSelectedClass] = useState<string | null>(null);
     const [allClasses, setAllClasses] = useState<string[]>([]);
+    const [dispensedIds, setDispensedIds] = useState<Set<string>>(new Set());
 
     useEffect(() => {
         if (!studentsLoading) {
             setStudents(globalStudents);
-            const uniqueClasses = Array.from(new Set(globalStudents.map(s => normalizeClassName(s.class as string)))).sort();
+            const uniqueClasses = Array.from(new Set(globalStudents.filter(s => s.status !== "TR").map(s => normalizeClassName(s.class as string)))).sort();
             setAllClasses(uniqueClasses);
         }
     }, [globalStudents, studentsLoading]);
@@ -56,17 +57,37 @@ export default function DashboardPage() {
                 if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     const data = mockDb.getAttendance(filterDate) as unknown as AttendanceRecord[];
+                    const activeDisp = new Set<string>();
+                    mockDb.getMedicalDispensations().forEach(d => {
+                        if (Array.isArray(d.dates) && d.dates.includes(filterDate)) {
+                            activeDisp.add(d.studentFirestoreId);
+                        }
+                    });
+                    setDispensedIds(activeDisp);
                     setRecords(data);
                     setIsLoading(false);
                     return;
                 }
-                // OTIMIZAÇÃO: Busca apenas registros da data selecionada no servidor
+                // OTIMIZAÇÃO: Busca apenas registros da data selecionada e dispensas médicas ativas na data
                 const q = query(
                     collection(db, "attendance"),
                     where("date", "==", filterDate),
                     orderBy("studentName", "asc")
                 );
-                const snapshot = await getDocs(q);
+                const dispQ = query(
+                    collection(db, "medical_dispensations"),
+                    where("endDate", ">=", filterDate)
+                );
+                const [snapshot, dispSnap] = await Promise.all([getDocs(q), getDocs(dispQ)]);
+                const activeDisp = new Set<string>();
+                dispSnap.docs.forEach(d => {
+                    const data = d.data();
+                    if (Array.isArray(data.dates) && data.dates.includes(filterDate)) {
+                        activeDisp.add(data.studentFirestoreId || d.id);
+                    }
+                });
+                setDispensedIds(activeDisp);
+
                 const data = snapshot.docs
                     .map(doc => ({
                         id: doc.id,
@@ -203,12 +224,17 @@ export default function DashboardPage() {
                                 const classStudents = students.filter(s => normalizeClassName(s.class) === cls);
 
                                 let totalPresences = 0;
+                                let totalDispensed = 0;
                                 let totalAbsences = 0;
 
                                 if (classStudents.length === 0 && classRecords.length > 0) {
                                     classRecords.forEach(r => {
                                         if (r.status === "TR") return;
-                                        if (r.status === "P" || r.status === "A") {
+                                        if (r.studentFirestoreId && dispensedIds.has(r.studentFirestoreId)) {
+                                            totalDispensed++;
+                                        } else if (r.status === "D") {
+                                            totalDispensed++;
+                                        } else if (r.status === "P" || r.status === "A") {
                                             totalPresences++;
                                         } else if (r.status === "F") {
                                             totalAbsences++;
@@ -218,7 +244,9 @@ export default function DashboardPage() {
                                     classStudents.forEach(s => {
                                         if (s.status === "TR") return;
                                         const record = classRecords.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
-                                        if (record) {
+                                        if (dispensedIds.has(s.firestoreId) || record?.status === "D") {
+                                            totalDispensed++;
+                                        } else if (record) {
                                             if (record.status === "TR") return;
                                             if (record.status === "P" || record.status === "A") {
                                                 totalPresences++;
@@ -231,8 +259,9 @@ export default function DashboardPage() {
                                     });
                                 }
 
-                                const percentage = totalPresences + totalAbsences > 0
-                                    ? Math.round((totalPresences / (totalPresences + totalAbsences)) * 100)
+                                const totalEvaluated = totalPresences + totalDispensed + totalAbsences;
+                                const percentage = totalEvaluated > 0
+                                    ? Math.round(((totalPresences + totalDispensed) / totalEvaluated) * 100)
                                     : 0;
 
                                 let ringColor = "group-hover:ring-red-500";
@@ -284,12 +313,17 @@ export default function DashboardPage() {
                 const classStudents = students.filter(s => normalizeClassName(s.class) === cls);
 
                 let totalPresences = 0;
+                let totalDispensed = 0;
                 let totalAbsences = 0;
 
                 if (classStudents.length === 0 && classRecords.length > 0) {
                     classRecords.forEach(r => {
                         if (r.status === "TR") return;
-                        if (r.status === "P" || r.status === "A") {
+                        if (r.studentFirestoreId && dispensedIds.has(r.studentFirestoreId)) {
+                            totalDispensed++;
+                        } else if (r.status === "D") {
+                            totalDispensed++;
+                        } else if (r.status === "P" || r.status === "A") {
                             totalPresences++;
                         } else if (r.status === "F") {
                             totalAbsences++;
@@ -299,7 +333,9 @@ export default function DashboardPage() {
                     classStudents.forEach(s => {
                         if (s.status === "TR") return;
                         const record = classRecords.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
-                        if (record) {
+                        if (dispensedIds.has(s.firestoreId) || record?.status === "D") {
+                            totalDispensed++;
+                        } else if (record) {
                             if (record.status === "TR") return;
                             if (record.status === "P" || record.status === "A") {
                                 totalPresences++;
@@ -318,8 +354,8 @@ export default function DashboardPage() {
                             <h2 className="font-bold text-gray-900 text-lg">Turma {cls}</h2>
                             <div className="flex gap-4 items-center text-sm font-medium">
                                 <span className="text-green-600">Presentes: {totalPresences}</span>
+                                {totalDispensed > 0 && <span className="text-blue-600">Dispensados: {totalDispensed}</span>}
                                 <span className="text-red-600">Faltas: {totalAbsences}</span>
-
                             </div>
                         </div>
 
@@ -337,8 +373,9 @@ export default function DashboardPage() {
                                     {classStudents.sort((a, b) => a.name.localeCompare(b.name, "pt-BR")).map(student => {
                                         const record = classRecords.find(r => r.studentFirestoreId === student.firestoreId || r.studentName === student.name);
                                         const isTR = student.status === "TR";
-                                        const status = isTR ? "TR" : (record ? record.status : "P");
-                                        const teacher = isTR ? "Sistema (TR)" : (record ? record.teacher : "Sistema (Padrão)");
+                                        const isDispensed = dispensedIds.has(student.firestoreId) || record?.status === "D";
+                                        const status = isTR ? "TR" : isDispensed ? "D" : (record ? record.status : "P");
+                                        const teacher = isTR ? "Sistema (TR)" : (record ? record.teacher : (isDispensed ? "Sistema (Dispensa)" : "Sistema (Padrão)"));
 
                                         return (
                                             <tr key={student.firestoreId} className={`hover:bg-gray-50/50 ${isTR ? 'bg-gray-50/50 opacity-60' : ''}`}>

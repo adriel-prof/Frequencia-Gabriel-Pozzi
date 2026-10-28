@@ -39,6 +39,15 @@ function PrintAbsencesContent() {
                     
                     const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
                     
+                    const studentsList = mockDb.getStudents().filter(s => s.status !== "TR");
+                    const activeById = new Map(studentsList.map(s => [s.firestoreId, s]));
+                    const activeByName = new Map(studentsList.map(s => [s.name.trim().toUpperCase(), s]));
+                    const dispensedIds = new Set(
+                        mockDb.getMedicalDispensations()
+                            .filter(d => Array.isArray(d.dates) && date ? d.dates.includes(date) : false)
+                            .map(d => d.studentFirestoreId)
+                    );
+
                     const recordsData = mockDb.getAttendance(date || undefined) as unknown as AttendanceRecord[];
                     const completedClassesToday = new Set<string>();
                     const LOCK_DATE = "2026-04-06";
@@ -48,6 +57,15 @@ function PrintAbsencesContent() {
                     recordsData.forEach(data => {
                         const clsNorm = normalizeClassName(data.studentClass);
                         completedClassesToday.add(clsNorm);
+
+                        const activeStudent = data.studentFirestoreId
+                            ? activeById.get(data.studentFirestoreId)
+                            : activeByName.get((data.studentName || "").trim().toUpperCase());
+
+                        // Ignora alunos TR, excluídos, transferidos de turma ou com dispensa médica ativa na data
+                        if (!activeStudent) return;
+                        if (normalizeClassName(activeStudent.class) !== clsNorm) return;
+                        if (dispensedIds.has(activeStudent.firestoreId)) return;
                         
                         if (data.status === "F") {
                             if (!absences[clsNorm]) {
@@ -65,7 +83,7 @@ function PrintAbsencesContent() {
                             let totalAbsences = 0;
                             
                             studentRecords.forEach(rec => {
-                                if (rec.date >= LOCK_DATE && rec.status !== "TR") {
+                                if (rec.date >= LOCK_DATE && rec.status !== "TR" && rec.status !== "D") {
                                     total++;
                                     if (rec.status === "F") {
                                         totalAbsences++;
@@ -74,7 +92,7 @@ function PrintAbsencesContent() {
                             });
                             
                             const presenceRate = total > 0 ? Math.round(((total - totalAbsences) / total) * 100) : 0;
-                            absences[clsNorm].push({ name: data.studentName, id: data.studentId, presenceRate });
+                            absences[clsNorm].push({ name: activeStudent.name, id: activeStudent.id, presenceRate });
                         }
                     });
                     
@@ -83,7 +101,6 @@ function PrintAbsencesContent() {
                         absences[cls].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
                     });
                     
-                    const studentsList = mockDb.getStudents().filter(s => s.status !== "TR");
                     const allClasses = Array.from(new Set(studentsList.map(s => normalizeClassName(s.class))));
                     const missing = allClasses
                         .filter(cls => !completedClassesToday.has(cls))
@@ -95,11 +112,26 @@ function PrintAbsencesContent() {
                     return;
                 }
 
-                // Fetch attendance records for the date
-                const q = query(collection(db, "attendance"), where("date", "==", date));
-                const snapshot = await getDocs(q);
+                // Fetch attendance records and active medical dispensations for the date
+                const [snapshot, dispSnap] = await Promise.all([
+                    getDocs(query(collection(db, "attendance"), where("date", "==", date))),
+                    getDocs(query(collection(db, "medical_dispensations"), where("endDate", ">=", date)))
+                ]);
 
                 const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
+
+                const dispensedIds = new Set<string>();
+                dispSnap.docs.forEach(d => {
+                    const dData = d.data();
+                    const dates: string[] = Array.isArray(dData.dates) ? dData.dates : [];
+                    if (date && dates.includes(date)) {
+                        dispensedIds.add(dData.studentFirestoreId || d.id);
+                    }
+                });
+
+                const activeStudents = globalStudents.filter(s => s.status !== "TR");
+                const activeById = new Map(activeStudents.map(s => [s.firestoreId, s]));
+                const activeByName = new Map(activeStudents.map(s => [s.name.trim().toUpperCase(), s]));
                 
                 const completedClassesToday = new Set<string>();
                 const absencesPromises: Promise<void>[] = [];
@@ -110,6 +142,25 @@ function PrintAbsencesContent() {
                     const clsNorm = normalizeClassName(data.studentClass);
                     completedClassesToday.add(clsNorm);
 
+                    let fId = data.studentFirestoreId;
+                    if (!fId) {
+                        const match = docSnap.id.match(/^att_(.+?)_\d{8}$/);
+                        if (match) fId = match[1];
+                    }
+
+                    const activeStudent = fId
+                        ? activeById.get(fId)
+                        : activeByName.get((data.studentName || "").trim().toUpperCase());
+
+                    if (globalStudents.length > 0) {
+                        // Ignora alunos TR, excluídos ou transferidos para outra turma
+                        if (!activeStudent) return;
+                        if (normalizeClassName(activeStudent.class as string) !== clsNorm) return;
+                    }
+
+                    const resolvedId = activeStudent?.firestoreId || fId;
+                    if (resolvedId && dispensedIds.has(resolvedId)) return;
+
                     if (data.status === "F") {
                         if (!absences[clsNorm]) {
                             absences[clsNorm] = [];
@@ -117,19 +168,26 @@ function PrintAbsencesContent() {
                         
                         const fetchStudentData = async () => {
                             let presenceRate = 0;
-                            if (data.studentFirestoreId) {
-                                const statsRef = doc(db, "student_stats", data.studentFirestoreId);
+                            if (resolvedId) {
+                                const statsRef = doc(db, "student_stats", resolvedId);
                                 const statsSnap = await getDoc(statsRef);
                                 if (statsSnap.exists()) {
                                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                     const statsData = statsSnap.data() as any;
-                                    const totalDays = Number(statsData?.totalDays || 0);
-                                    const absences = Number(statsData?.absences || 0);
-                                    presenceRate = totalDays > 0 ? Math.round(((totalDays - absences) / totalDays) * 100) : 0;
+                                    const presences = Number(statsData?.presences || 0);
+                                    const stuAbsences = Number(statsData?.absences || 0);
+                                    const evalDays = (presences + stuAbsences) > 0
+                                        ? (presences + stuAbsences)
+                                        : Math.max(0, Number(statsData?.totalDays || 0) - Number(statsData?.dispensed || 0));
+                                    presenceRate = evalDays > 0 ? Math.round(((evalDays - stuAbsences) / evalDays) * 100) : 0;
                                 }
                             }
 
-                            absences[clsNorm].push({ name: data.studentName, id: data.studentId, presenceRate });
+                            absences[clsNorm].push({
+                                name: activeStudent?.name || data.studentName,
+                                id: activeStudent?.id || data.studentId,
+                                presenceRate
+                            });
                         };
                         absencesPromises.push(fetchStudentData());
                     }

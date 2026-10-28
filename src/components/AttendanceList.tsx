@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { collection, writeBatch, doc, getDoc, setDoc, serverTimestamp, deleteDoc, addDoc, query, where, getDocs, increment } from "firebase/firestore";
+import { collection, writeBatch, doc, getDoc, serverTimestamp, addDoc, query, where, getDocs, increment } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { useAuth } from "@/context/AuthContext";
 import { useStudents } from "@/context/StudentsContext";
@@ -126,12 +126,51 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 return;
             }
 
+            const today = new Date().toISOString().split("T")[0];
+            const dateKey = today.replace(/-/g, "");
+            const batch = writeBatch(db);
+
             const studentRef = doc(db, "students", transferCandidate.firestoreId);
-            await setDoc(studentRef, {
+            batch.set(studentRef, {
                 class: finalTargetClass,
                 id: Number(transferNewNumber)
             }, { merge: true });
 
+            const statsRef = doc(db, "student_stats", transferCandidate.firestoreId);
+            const oldStatus = existingTodayStatus[transferCandidate.firestoreId];
+            const attRef = doc(db, "attendance", `att_${transferCandidate.firestoreId}_${dateKey}`);
+
+            if (oldStatus) {
+                if (oldStatus === "F") {
+                    // Remove falta registrada hoje na turma de origem antes da transferência
+                    batch.delete(attRef);
+                    batch.set(statsRef, {
+                        studentClass: finalTargetClass,
+                        studentId: Number(transferNewNumber),
+                        totalDays: increment(-1),
+                        absences: increment(-1),
+                        updatedAt: serverTimestamp()
+                    }, { merge: true });
+                } else {
+                    batch.set(attRef, {
+                        studentClass: finalTargetClass,
+                        studentId: Number(transferNewNumber)
+                    }, { merge: true });
+                    batch.set(statsRef, {
+                        studentClass: finalTargetClass,
+                        studentId: Number(transferNewNumber),
+                        updatedAt: serverTimestamp()
+                    }, { merge: true });
+                }
+            } else {
+                batch.set(statsRef, {
+                    studentClass: finalTargetClass,
+                    studentId: Number(transferNewNumber),
+                    updatedAt: serverTimestamp()
+                }, { merge: true });
+            }
+
+            await batch.commit();
             await refreshStudents();
             alert(`Estudante transferido com sucesso para a turma ${finalTargetClass}!`);
         } catch (err) {
@@ -264,15 +303,15 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                         const hasActiveDispensation = s.firestoreId in activeDispensations;
                         if (s.status === "TR") {
                             initialAttendance[s.firestoreId] = "TR";
-                        } else if (hasExistingRecord) {
-                            initialAttendance[s.firestoreId] = existingMap[s.firestoreId];
-                            if (existingMap[s.firestoreId] === "D" || hasActiveDispensation) {
-                                initialDispensed.add(s.firestoreId);
-                            }
                         } else if (hasActiveDispensation) {
-                            // Dispensa médica de vários dias: já vem marcado como D
+                            // Dispensa médica ativa tem prioridade mesmo que já houvesse chamada hoje
                             initialAttendance[s.firestoreId] = "D";
                             initialDispensed.add(s.firestoreId);
+                        } else if (hasExistingRecord) {
+                            initialAttendance[s.firestoreId] = existingMap[s.firestoreId];
+                            if (existingMap[s.firestoreId] === "D") {
+                                initialDispensed.add(s.firestoreId);
+                            }
                         } else {
                             initialAttendance[s.firestoreId] = "P";
                         }
@@ -325,15 +364,15 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     const hasActiveDispensation = s.firestoreId in activeDispensations;
                     if (s.status === "TR") {
                         initialAttendance[s.firestoreId] = "TR";
-                    } else if (hasExistingRecord) {
-                        initialAttendance[s.firestoreId] = existingMap[s.firestoreId];
-                        if (existingMap[s.firestoreId] === "D" || hasActiveDispensation) {
-                            initialDispensed.add(s.firestoreId);
-                        }
                     } else if (hasActiveDispensation) {
-                        // Dispensa médica de vários dias: já vem marcado como D
+                        // Dispensa médica ativa tem prioridade mesmo que já houvesse chamada hoje
                         initialAttendance[s.firestoreId] = "D";
                         initialDispensed.add(s.firestoreId);
+                    } else if (hasExistingRecord) {
+                        initialAttendance[s.firestoreId] = existingMap[s.firestoreId];
+                        if (existingMap[s.firestoreId] === "D") {
+                            initialDispensed.add(s.firestoreId);
+                        }
                     } else {
                         initialAttendance[s.firestoreId] = "P";
                     }
@@ -441,11 +480,58 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             if (isLocalhost()) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 mockDb.saveMedicalDispensation(record);
+                if (dispensaDates.includes(today) && student.firestoreId in existingTodayStatus) {
+                    mockDb.saveAttendanceBatch([{
+                        studentId: student.id,
+                        studentName: student.name,
+                        studentClass: normalizeClassName(student.class),
+                        studentFirestoreId: student.firestoreId,
+                        date: today,
+                        status: "D",
+                        teacher: user?.email || "admin"
+                    }]);
+                }
             } else {
-                await setDoc(doc(db, "medical_dispensations", student.firestoreId), {
+                const batch = writeBatch(db);
+                batch.set(doc(db, "medical_dispensations", student.firestoreId), {
                     ...record,
                     createdAt: serverTimestamp()
                 });
+
+                // Se já houve chamada hoje para este aluno, converte imediatamente para "D" no banco
+                const oldStatus = existingTodayStatus[student.firestoreId];
+                if (dispensaDates.includes(today) && oldStatus && oldStatus !== "D") {
+                    const dateKey = today.replace(/-/g, "");
+                    const attRef = doc(db, "attendance", `att_${student.firestoreId}_${dateKey}`);
+                    batch.set(attRef, {
+                        studentId: student.id,
+                        studentName: student.name,
+                        studentClass: normalizeClassName(student.class),
+                        studentFirestoreId: student.firestoreId,
+                        date: today,
+                        status: "D",
+                        timestamp: serverTimestamp()
+                    }, { merge: true });
+
+                    const oldTotal = (oldStatus !== "TR") ? 1 : 0;
+                    const oldAbsence = (oldStatus === "F") ? 1 : 0;
+                    const oldPresence = (oldStatus === "P" || oldStatus === "A") ? 1 : 0;
+
+                    const statsRef = doc(db, "student_stats", student.firestoreId);
+                    batch.set(statsRef, {
+                        studentFirestoreId: student.firestoreId,
+                        studentId: student.id,
+                        studentName: student.name,
+                        studentClass: normalizeClassName(student.class),
+                        totalDays: increment(-oldTotal),
+                        absences: increment(-oldAbsence),
+                        presences: increment(-oldPresence),
+                        dispensed: increment(1),
+                        updatedAt: serverTimestamp()
+                    }, { merge: true });
+                }
+
+                await batch.commit();
             }
 
             if (dispensaDates.includes(today)) {
@@ -454,6 +540,9 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     [student.firestoreId]: { startDate: record.startDate, endDate: record.endDate, dates: record.dates, days: record.days }
                 }));
                 applyDispensaState(student.firestoreId, true);
+                if (student.firestoreId in existingTodayStatus) {
+                    setExistingTodayStatus(prev => ({ ...prev, [student.firestoreId]: "D" }));
+                }
             } else {
                 alert(`Dispensa médica registrada de ${formatDateBR(record.startDate)} até ${formatDateBR(record.endDate)}. Hoje não é dia letivo, então ela passará a valer na próxima chamada.`);
             }
@@ -478,7 +567,24 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 const { mockDb } = await import("@/lib/mockDatabase");
                 mockDb.removeMedicalDispensation(student.firestoreId);
             } else if (role === "admin") {
-                await deleteDoc(doc(db, "medical_dispensations", student.firestoreId));
+                const batch = writeBatch(db);
+                batch.delete(doc(db, "medical_dispensations", student.firestoreId));
+
+                const oldStatus = existingTodayStatus[student.firestoreId];
+                if (oldStatus === "D") {
+                    const dateKey = today.replace(/-/g, "");
+                    batch.set(doc(db, "attendance", `att_${student.firestoreId}_${dateKey}`), {
+                        status: "P",
+                        timestamp: serverTimestamp()
+                    }, { merge: true });
+                    batch.set(doc(db, "student_stats", student.firestoreId), {
+                        totalDays: increment(1),
+                        presences: increment(1),
+                        dispensed: increment(-1),
+                        updatedAt: serverTimestamp()
+                    }, { merge: true });
+                }
+                await batch.commit();
             }
             setDispensationInfo(prev => {
                 const next = { ...prev };
@@ -486,6 +592,9 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 return next;
             });
             applyDispensaState(student.firestoreId, false);
+            if (existingTodayStatus[student.firestoreId] === "D") {
+                setExistingTodayStatus(prev => ({ ...prev, [student.firestoreId]: "P" }));
+            }
         } catch (err) {
             console.error("Erro ao remover dispensa médica:", err);
             alert("Erro ao remover a dispensa médica. Tente novamente.");
@@ -498,6 +607,9 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             return;
         }
         try {
+            const today = new Date().toISOString().split("T")[0];
+            const nextAttendanceStatus: AttendanceStatus = newTR ? "TR" : (dispensedStudents.has(student.firestoreId) ? "D" : "P");
+
             if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 const allStudents = mockDb.getStudents();
@@ -506,13 +618,67 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     allStudents[foundIdx].status = newTR ? "TR" : "";
                     localStorage.setItem("mock_students", JSON.stringify(allStudents));
                 }
+                if (student.firestoreId in existingTodayStatus) {
+                    mockDb.saveAttendanceBatch([{
+                        studentId: student.id,
+                        studentName: student.name,
+                        studentClass: normalizeClassName(student.class),
+                        studentFirestoreId: student.firestoreId,
+                        date: today,
+                        status: nextAttendanceStatus,
+                        teacher: user?.email || "admin"
+                    }]);
+                }
                 student.status = newTR ? "TR" : "";
+                setAttendance(prev => ({ ...prev, [student.firestoreId]: nextAttendanceStatus }));
                 await refreshStudents();
                 return;
             }
 
-            await setDoc(doc(db, "students", student.firestoreId), { status: newTR ? "TR" : "" }, { merge: true });
+            const batch = writeBatch(db);
+            batch.set(doc(db, "students", student.firestoreId), { status: newTR ? "TR" : "" }, { merge: true });
+
+            // Se já existe chamada lançada hoje, atualiza imediatamente o registro de hoje e o student_stats
+            const oldStatus = existingTodayStatus[student.firestoreId];
+            if (oldStatus && oldStatus !== nextAttendanceStatus) {
+                const dateKey = today.replace(/-/g, "");
+                batch.set(doc(db, "attendance", `att_${student.firestoreId}_${dateKey}`), {
+                    studentId: student.id,
+                    studentName: student.name,
+                    studentClass: normalizeClassName(student.class),
+                    studentFirestoreId: student.firestoreId,
+                    date: today,
+                    status: nextAttendanceStatus,
+                    timestamp: serverTimestamp()
+                }, { merge: true });
+
+                const oldTotal = (oldStatus !== "TR" && oldStatus !== "D") ? 1 : 0;
+                const newTotal = (nextAttendanceStatus === "P") ? 1 : 0;
+                const oldAbsence = (oldStatus === "F") ? 1 : 0;
+                const oldPresence = (oldStatus === "P" || oldStatus === "A") ? 1 : 0;
+                const newPresence = (nextAttendanceStatus === "P") ? 1 : 0;
+                const oldDispensed = (oldStatus === "D") ? 1 : 0;
+                const newDispensed = (nextAttendanceStatus === "D") ? 1 : 0;
+
+                batch.set(doc(db, "student_stats", student.firestoreId), {
+                    studentFirestoreId: student.firestoreId,
+                    studentId: student.id,
+                    studentName: student.name,
+                    studentClass: normalizeClassName(student.class),
+                    totalDays: increment(newTotal - oldTotal),
+                    absences: increment(-oldAbsence),
+                    presences: increment(newPresence - oldPresence),
+                    dispensed: increment(newDispensed - oldDispensed),
+                    updatedAt: serverTimestamp()
+                }, { merge: true });
+            }
+
+            await batch.commit();
             student.status = newTR ? "TR" : "";
+            setAttendance(prev => ({ ...prev, [student.firestoreId]: nextAttendanceStatus }));
+            if (oldStatus) {
+                setExistingTodayStatus(prev => ({ ...prev, [student.firestoreId]: nextAttendanceStatus }));
+            }
             await refreshStudents();
         } catch (err) {
             console.error("Erro ao alterar status TR:", err);
@@ -687,7 +853,11 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
                 const batchRecords = students.map(s => {
-                    const currentStatus = attendance[s.firestoreId] || "P";
+                    const currentStatus: AttendanceStatus = s.status === "TR"
+                        ? "TR"
+                        : dispensedStudents.has(s.firestoreId)
+                            ? "D"
+                            : (attendance[s.firestoreId] || "P");
                     return {
                         studentId: s.id,
                         studentName: s.name,
@@ -720,13 +890,17 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 // Ao criar um ID com base na data + aluno, garantimos a sobrescrita (merge)
                 const docId = `att_${s.firestoreId}_${dateKey}`;
                 const docRef = doc(db, "attendance", docId);
-                const currentStatus = attendance[s.firestoreId] || "P";
+                const currentStatus: AttendanceStatus = s.status === "TR"
+                    ? "TR"
+                    : dispensedStudents.has(s.firestoreId)
+                        ? "D"
+                        : (attendance[s.firestoreId] || "P");
                 const oldStatus = existingTodayStatus[s.firestoreId];
 
                 if (currentStatus === "P" || currentStatus === "A") presentCount++;
                 else if (currentStatus === "F") absentCount++;
                 else if (currentStatus === "D") dispensedCount++;
-                else if (currentStatus === "TR" || s.status === "TR") transferCount++;
+                else if (currentStatus === "TR") transferCount++;
 
                 batch.set(docRef, {
                     studentId: s.id,
@@ -740,8 +914,9 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 }, { merge: true });
 
                 // Calcular deltas para a coleção de agregação student_stats
-                const oldTotal = (oldStatus && oldStatus !== "TR") ? 1 : 0;
-                const newTotal = (currentStatus !== "TR") ? 1 : 0;
+                // Dias de TR e Dispensa Médica (D) não inflam totalDays avaliados para não distorcer a % de frequência
+                const oldTotal = (oldStatus && oldStatus !== "TR" && oldStatus !== "D") ? 1 : 0;
+                const newTotal = (currentStatus !== "TR" && currentStatus !== "D") ? 1 : 0;
                 const totalDelta = newTotal - oldTotal;
 
                 const oldAbsence = (oldStatus === "F") ? 1 : 0;
@@ -773,9 +948,10 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             });
 
             // Registrar Resumo Diário para Otimização de Leituras
-            const totalEvaluated = presentCount + absentCount;
+            // Dispensa médica (D) é ausência justificada/abonada e não reduz a porcentagem de presença da turma
+            const totalEvaluated = presentCount + dispensedCount + absentCount;
             const activeStudents = Math.max(0, students.length - transferCount);
-            const presentPercentage = totalEvaluated > 0 ? Math.round((presentCount / totalEvaluated) * 100) : 0;
+            const presentPercentage = totalEvaluated > 0 ? Math.round(((presentCount + dispensedCount) / totalEvaluated) * 100) : 0;
             const summaryDocId = `${today}_${classNameNorm}`;
             const summaryRef = doc(db, "daily_summaries", summaryDocId);
             batch.set(summaryRef, {
@@ -795,7 +971,11 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             // Clean snapshot for history log to prevent undefined fields
             const sanitizedSnapshot: Record<string, AttendanceStatus> = {};
             students.forEach(s => {
-                sanitizedSnapshot[s.firestoreId] = attendance[s.firestoreId] || "P";
+                sanitizedSnapshot[s.firestoreId] = s.status === "TR"
+                    ? "TR"
+                    : dispensedStudents.has(s.firestoreId)
+                        ? "D"
+                        : (attendance[s.firestoreId] || "P");
             });
 
             // Registrar Log de Auditoria no Histórico Principal
@@ -941,6 +1121,10 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                                 <div className="w-14 h-14 bg-gray-200 text-gray-500 rounded-xl flex items-center justify-center font-bold text-lg border border-gray-300">
                                     TR
                                 </div>
+                            ) : isDispensed ? (
+                                <div className="w-14 h-14 bg-blue-500 text-white rounded-xl flex items-center justify-center font-bold text-lg shadow-md shadow-blue-500/30 ring-2 ring-blue-600 ring-offset-2">
+                                    D
+                                </div>
                             ) : (
                                 <div className="flex gap-2">
                                     <button
@@ -973,18 +1157,6 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                                     >
                                         A
                                     </button>
-                                    {isDispensed && (
-                                        <button
-                                            disabled={!isAllowed || isSubmitting}
-                                            onClick={() => handleStatusChange(student.firestoreId, "D")}
-                                            className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${attendance[student.firestoreId] === "D"
-                                                ? "bg-blue-500 text-white shadow-md shadow-blue-500/30 scale-105 ring-2 ring-blue-600 ring-offset-2"
-                                                : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                                                } ${!isAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
-                                        >
-                                            D
-                                        </button>
-                                    )}
                                 </div>
                             )}
                         </div>

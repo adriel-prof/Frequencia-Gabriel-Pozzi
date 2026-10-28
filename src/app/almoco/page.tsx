@@ -103,20 +103,29 @@ function AlmocoContent() {
                 if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     const recordsData = mockDb.getAttendance(selectedDate) as unknown as AttendanceRecord[];
+                    const activeDisp = new Set<string>();
+                    mockDb.getMedicalDispensations().forEach(d => {
+                        if (Array.isArray(d.dates) && d.dates.includes(selectedDate)) {
+                            activeDisp.add(d.studentFirestoreId);
+                        }
+                    });
                     
                     const completedClassesToday = new Set<string>();
-                    const stats: Record<string, { p: number; f: number }> = {};
+                    const stats: Record<string, { p: number; d: number; f: number }> = {};
 
                     recordsData.forEach(r => {
                         completedClassesToday.add(normalizeClassName(r.studentClass));
                     });
 
                     completedClassesToday.forEach(clsNorm => {
-                        stats[clsNorm] = { p: 0, f: 0 };
+                        stats[clsNorm] = { p: 0, d: 0, f: 0 };
                         const classStudents = studentsList.filter(s => normalizeClassName(s.class) === clsNorm);
                         classStudents.forEach(s => {
                             const record = recordsData.find(r => r.studentFirestoreId === s.firestoreId || r.studentName === s.name);
-                            if (record) {
+                            if (activeDisp.has(s.firestoreId) || record?.status === "D") {
+                                stats[clsNorm].d += 1;
+                            } else if (record) {
+                                if (record.status === "TR") return;
                                 if (record.status === "P" || record.status === "A") {
                                     stats[clsNorm].p += 1;
                                 } else if (record.status === "F") {
@@ -129,8 +138,8 @@ function AlmocoContent() {
                     });
 
                     const result: ClassStat[] = Object.keys(stats).map(cls => {
-                        const total = stats[cls].p + stats[cls].f;
-                        const percentage = total === 0 ? 0 : Math.round((stats[cls].p / total) * 100);
+                        const total = stats[cls].p + stats[cls].d + stats[cls].f;
+                        const percentage = total === 0 ? 0 : Math.round(((stats[cls].p + stats[cls].d) / total) * 100);
                         return { className: formatClassName(cls), percentage, rawClass: cls };
                     });
 
@@ -146,13 +155,21 @@ function AlmocoContent() {
                     return;
                 }
 
-                // Busca registros de chamada diretamente para ter paridade total com o Dashboard
+                // Busca registros de chamada e dispensas médicas ativas para ter paridade total com o Dashboard
                 const q = query(collection(db, "attendance"), where("date", "==", selectedDate));
-                const snapshot = await getDocs(q);
+                const dispQ = query(collection(db, "medical_dispensations"), where("endDate", ">=", selectedDate));
+                const [snapshot, dispSnap] = await Promise.all([getDocs(q), getDocs(dispQ)]);
                 const recordsData = snapshot.docs.map(doc => doc.data() as AttendanceRecord);
+                const activeDisp = new Set<string>();
+                dispSnap.docs.forEach(d => {
+                    const data = d.data();
+                    if (Array.isArray(data.dates) && data.dates.includes(selectedDate)) {
+                        activeDisp.add(data.studentFirestoreId || d.id);
+                    }
+                });
 
                 const completedClassesToday = new Set<string>();
-                const stats: Record<string, { p: number; f: number; raw: string }> = {};
+                const stats: Record<string, { p: number; d: number; f: number; raw: string }> = {};
 
                 recordsData.forEach(r => {
                     if (r.studentClass) {
@@ -161,19 +178,23 @@ function AlmocoContent() {
                 });
 
                 completedClassesToday.forEach(clsNorm => {
-                    stats[clsNorm] = { p: 0, f: 0, raw: clsNorm };
+                    stats[clsNorm] = { p: 0, d: 0, f: 0, raw: clsNorm };
                     const classStudents = studentsList.filter(s => normalizeClassName(s.class) === clsNorm);
                     if (classStudents.length === 0) {
                         const classRecords = recordsData.filter(r => normalizeClassName(r.studentClass) === clsNorm);
                         classRecords.forEach(r => {
-                            if (r.status === "P" || r.status === "A") stats[clsNorm].p += 1;
+                            if (r.status === "TR") return;
+                            if ((r.studentFirestoreId && activeDisp.has(r.studentFirestoreId)) || r.status === "D") stats[clsNorm].d += 1;
+                            else if (r.status === "P" || r.status === "A") stats[clsNorm].p += 1;
                             else if (r.status === "F") stats[clsNorm].f += 1;
                         });
                     } else {
                         classStudents.forEach(s => {
                             if (s.status === "TR") return;
                             const record = recordsData.find(r => (r.studentFirestoreId && r.studentFirestoreId === s.firestoreId) || r.studentName === s.name);
-                            if (record) {
+                            if (activeDisp.has(s.firestoreId) || record?.status === "D") {
+                                stats[clsNorm].d += 1;
+                            } else if (record) {
                                 if (record.status === "TR") return;
                                 if (record.status === "P" || record.status === "A") {
                                     stats[clsNorm].p += 1;
@@ -188,8 +209,8 @@ function AlmocoContent() {
                 });
 
                 const result: ClassStat[] = Object.keys(stats).map(cls => {
-                    const total = stats[cls].p + stats[cls].f;
-                    const percentage = total === 0 ? 0 : Math.round((stats[cls].p / total) * 100);
+                    const total = stats[cls].p + stats[cls].d + stats[cls].f;
+                    const percentage = total === 0 ? 0 : Math.round(((stats[cls].p + stats[cls].d) / total) * 100);
                     
                     const sampleRecord = recordsData.find(r => normalizeClassName(r.studentClass) === cls);
                     const rawName = sampleRecord?.studentClass || cls;

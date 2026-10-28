@@ -22,6 +22,7 @@ const LOCK_DATE = "2026-04-06";
 export function TeacherHistory() {
     const { students } = useStudents();
     const [records, setRecords] = useState<AttendanceRecord[]>([]);
+    const [dispensedIds, setDispensedIds] = useState<Set<string>>(new Set());
     const [isLoading, setIsLoading] = useState(true);
     const [filterDate, setFilterDate] = useState(new Date().toISOString().split("T")[0]);
     const [selectedClass, setSelectedClass] = useState<string | null>(null);
@@ -33,6 +34,12 @@ export function TeacherHistory() {
                 if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                     const { mockDb } = await import("@/lib/mockDatabase");
                     const data = mockDb.getAttendance(filterDate) as unknown as AttendanceRecord[];
+                    const dispSet = new Set(
+                        mockDb.getMedicalDispensations()
+                            .filter(d => Array.isArray(d.dates) && d.dates.includes(filterDate))
+                            .map(d => d.studentFirestoreId)
+                    );
+                    setDispensedIds(dispSet);
                     setRecords(data);
                     setIsLoading(false);
                     return;
@@ -43,7 +50,21 @@ export function TeacherHistory() {
                     where("date", "==", filterDate),
                     orderBy("studentName", "asc")
                 );
-                const snapshot = await getDocs(q);
+                const dispQuery = query(
+                    collection(db, "medical_dispensations"),
+                    where("endDate", ">=", filterDate)
+                );
+                const [snapshot, dispSnap] = await Promise.all([getDocs(q), getDocs(dispQuery)]);
+                const dispSet = new Set<string>();
+                dispSnap.docs.forEach(d => {
+                    const dData = d.data();
+                    const dates: string[] = Array.isArray(dData.dates) ? dData.dates : [];
+                    if (dates.includes(filterDate)) {
+                        dispSet.add(dData.studentFirestoreId || d.id);
+                    }
+                });
+                setDispensedIds(dispSet);
+
                 const data = snapshot.docs
                     .map(doc => ({
                         id: doc.id,
@@ -69,15 +90,40 @@ export function TeacherHistory() {
     }
 
     const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
-    const activeIds = new Set(students.map(s => s.firestoreId));
-    const activeNames = new Set(students.map(s => s.name.trim().toUpperCase()));
-    const filteredRecords = students.length > 0
-        ? records.filter(r =>
-            r.studentFirestoreId
-                ? activeIds.has(r.studentFirestoreId)
-                : activeNames.has((r.studentName || "").trim().toUpperCase())
-        )
-        : records;
+    const studentsById = new Map(students.map(s => [s.firestoreId, s]));
+    const studentsByName = new Map(students.map(s => [s.name.trim().toUpperCase(), s]));
+
+    const filteredRecords = (students.length > 0
+        ? records.filter(r => {
+            let fId = r.studentFirestoreId;
+            if (!fId) {
+                const match = r.id?.match(/^att_(.+?)_\d{8}$/);
+                if (match) fId = match[1];
+            }
+            const found = fId ? studentsById.get(fId) : studentsByName.get((r.studentName || "").trim().toUpperCase());
+            if (!found) return false;
+            return normalizeClassName(found.class) === normalizeClassName(r.studentClass);
+        })
+        : records
+    ).map(r => {
+        let fId = r.studentFirestoreId;
+        if (!fId) {
+            const match = r.id?.match(/^att_(.+?)_\d{8}$/);
+            if (match) fId = match[1];
+        }
+        const found = fId ? studentsById.get(fId) : studentsByName.get((r.studentName || "").trim().toUpperCase());
+        const resolvedId = found?.firestoreId || fId;
+        const effectiveStatus: AttendanceRecord["status"] =
+            found?.status === "TR"
+                ? "TR"
+                : (resolvedId && dispensedIds.has(resolvedId))
+                    ? "D"
+                    : r.status;
+        return {
+            ...r,
+            status: effectiveStatus
+        };
+    });
     const classes = Array.from(new Set(filteredRecords.map(r => normalizeClassName(r.studentClass))));
 
     return (

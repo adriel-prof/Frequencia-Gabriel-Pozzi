@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, getDoc, writeBatch, increment, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 
 import { useStudents } from "@/context/StudentsContext";
@@ -62,10 +62,47 @@ export default function StudentsTransferPage() {
                 return;
             }
 
+            const today = new Date().toISOString().split("T")[0];
+            const dateKey = today.replace(/-/g, "");
+            const batch = writeBatch(db);
+
             const studentRef = doc(db, "students", student.firestoreId);
-            await setDoc(studentRef, {
+            batch.set(studentRef, {
                 status: newTR ? "TR" : ""
             }, { merge: true });
+
+            // Se já houve chamada lançada hoje para este aluno, atualiza imediatamente para evitar contabilizar falta
+            const attRef = doc(db, "attendance", `att_${student.firestoreId}_${dateKey}`);
+            const attSnap = await getDoc(attRef);
+            if (attSnap.exists()) {
+                const oldStatus = attSnap.data().status as string;
+                const nextStatus: string = newTR ? "TR" : "P";
+                if (oldStatus !== nextStatus) {
+                    batch.set(attRef, {
+                        status: nextStatus,
+                        timestamp: serverTimestamp()
+                    }, { merge: true });
+
+                    const oldTotal = (oldStatus !== "TR" && oldStatus !== "D") ? 1 : 0;
+                    const newTotal = (nextStatus !== "TR" && nextStatus !== "D") ? 1 : 0;
+                    const oldAbsence = (oldStatus === "F") ? 1 : 0;
+                    const newAbsence = (nextStatus === "F") ? 1 : 0;
+                    const oldPresence = (oldStatus === "P" || oldStatus === "A") ? 1 : 0;
+                    const newPresence = (nextStatus === "P" || nextStatus === "A") ? 1 : 0;
+                    const oldDispensed = (oldStatus === "D") ? 1 : 0;
+                    const newDispensed = (nextStatus === "D") ? 1 : 0;
+
+                    batch.set(doc(db, "student_stats", student.firestoreId), {
+                        totalDays: increment(newTotal - oldTotal),
+                        absences: increment(newAbsence - oldAbsence),
+                        presences: increment(newPresence - oldPresence),
+                        dispensed: increment(newDispensed - oldDispensed),
+                        updatedAt: serverTimestamp()
+                    }, { merge: true });
+                }
+            }
+
+            await batch.commit();
 
             setStudents(prev => prev.map(s => 
                 s.firestoreId === student.firestoreId 
@@ -168,13 +205,53 @@ export default function StudentsTransferPage() {
                 return;
             }
 
-            // Salvar no Firestore
+            // Salvar no Firestore e atualizar registro de hoje / estatísticas
+            const today = new Date().toISOString().split("T")[0];
+            const dateKey = today.replace(/-/g, "");
+            const batch = writeBatch(db);
+
             const studentRef = doc(db, "students", transferCandidate.firestoreId);
-            await setDoc(studentRef, {
+            batch.set(studentRef, {
                 class: finalTargetClass,
                 id: Number(newNumber)
             }, { merge: true });
 
+            const statsRef = doc(db, "student_stats", transferCandidate.firestoreId);
+            const attRef = doc(db, "attendance", `att_${transferCandidate.firestoreId}_${dateKey}`);
+            const attSnap = await getDoc(attRef);
+
+            if (attSnap.exists()) {
+                const oldStatus = attSnap.data().status as string;
+                if (oldStatus === "F") {
+                    // Remove falta registrada hoje na turma de origem antes da transferência
+                    batch.delete(attRef);
+                    batch.set(statsRef, {
+                        studentClass: finalTargetClass,
+                        studentId: Number(newNumber),
+                        totalDays: increment(-1),
+                        absences: increment(-1),
+                        updatedAt: serverTimestamp()
+                    }, { merge: true });
+                } else {
+                    batch.set(attRef, {
+                        studentClass: finalTargetClass,
+                        studentId: Number(newNumber)
+                    }, { merge: true });
+                    batch.set(statsRef, {
+                        studentClass: finalTargetClass,
+                        studentId: Number(newNumber),
+                        updatedAt: serverTimestamp()
+                    }, { merge: true });
+                }
+            } else {
+                batch.set(statsRef, {
+                    studentClass: finalTargetClass,
+                    studentId: Number(newNumber),
+                    updatedAt: serverTimestamp()
+                }, { merge: true });
+            }
+
+            await batch.commit();
             await refreshStudents();
 
             setFeedback({ type: "success", msg: `Aluno transferido com sucesso para a turma ${finalTargetClass}!` });
