@@ -1,8 +1,9 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
+import { useAuth } from "@/context/AuthContext";
 
 export type Student = {
     firestoreId: string;
@@ -25,12 +26,16 @@ const StudentsContext = createContext<StudentsContextType | undefined>(undefined
 
 const CACHE_KEY = "cached_students_list_v1";
 
+const isLocalhost = () =>
+    typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
 export function StudentsProvider({ children }: { children: React.ReactNode }) {
+    const { user, loading: authLoading } = useAuth();
     const [students, setStudents] = useState<Student[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const loadFromCache = (): Student[] | null => {
+    const loadFromCache = useCallback((): Student[] | null => {
         if (typeof window === "undefined") return null;
         try {
             const cachedData = localStorage.getItem(CACHE_KEY);
@@ -44,12 +49,23 @@ export function StudentsProvider({ children }: { children: React.ReactNode }) {
             console.warn("Failed to parse cached students:", e);
         }
         return null;
-    };
+    }, []);
 
-    const fetchFromFirestore = async (): Promise<Student[]> => {
-        if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
+    const saveToCache = useCallback((list: Student[]) => {
+        if (typeof window === "undefined") return;
+        try {
+            localStorage.setItem(CACHE_KEY, JSON.stringify(list));
+        } catch (e) {
+            console.warn("Failed to save students to cache:", e);
+        }
+    }, []);
+
+    const fetchFromFirestore = useCallback(async (): Promise<Student[]> => {
+        if (isLocalhost()) {
             const { mockDb } = await import("@/lib/mockDatabase");
-            return mockDb.getStudents();
+            const list = [...mockDb.getStudents()];
+            list.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+            return list;
         }
 
         const snap = await getDocs(collection(db, "students"));
@@ -64,20 +80,19 @@ export function StudentsProvider({ children }: { children: React.ReactNode }) {
 
         list.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
         return list;
-    };
+    }, []);
 
     const fetchStudents = useCallback(async (forceRemote = false) => {
-        setLoading(true);
         setError(null);
 
-        // 1. Tentar carregar do cache se não estiver forçando busca remota
-        if (!forceRemote) {
-            const cached = loadFromCache();
-            if (cached) {
-                setStudents(cached);
-                setLoading(false);
-                return;
-            }
+        // 1. Hidrata imediatamente com o cache (Stale-While-Revalidate) para evitar tela em branco,
+        // mas NÃO interrompe a busca remota: sempre revalida no banco para refletir exclusões/edições.
+        const cached = loadFromCache();
+        if (!forceRemote && cached) {
+            setStudents(cached);
+            setLoading(false);
+        } else {
+            setLoading(true);
         }
 
         // 2. Buscar da rede com até 3 retentativas
@@ -90,9 +105,7 @@ export function StudentsProvider({ children }: { children: React.ReactNode }) {
                 attempts++;
                 const list = await fetchFromFirestore();
                 setStudents(list);
-                if (typeof window !== "undefined") {
-                    localStorage.setItem(CACHE_KEY, JSON.stringify(list));
-                }
+                saveToCache(list);
                 setLoading(false);
                 return;
             } catch (err) {
@@ -115,11 +128,70 @@ export function StudentsProvider({ children }: { children: React.ReactNode }) {
             setError(msg);
         }
         setLoading(false);
-    }, []);
+    }, [fetchFromFirestore, loadFromCache, saveToCache]);
 
     useEffect(() => {
-        fetchStudents();
-    }, [fetchStudents]);
+        // Ambiente de simulação local (localhost)
+        if (isLocalhost()) {
+            fetchStudents(true);
+            const handleStorage = (e: StorageEvent) => {
+                if (e.key === "mock_students" || e.key === CACHE_KEY) {
+                    fetchStudents(true);
+                }
+            };
+            window.addEventListener("storage", handleStorage);
+            return () => window.removeEventListener("storage", handleStorage);
+        }
+
+        // Aguarda definição da autenticação antes de abrir conexão com o Firestore
+        if (authLoading) return;
+
+        if (!user) {
+            const cached = loadFromCache();
+            if (cached) {
+                setStudents(cached);
+            }
+            setLoading(false);
+            return;
+        }
+
+        // Hidrata com cache imediatamente enquanto o listener em tempo real conecta
+        const cached = loadFromCache();
+        if (cached) {
+            setStudents(cached);
+            setLoading(false);
+        } else {
+            setLoading(true);
+        }
+
+        // Escuta em tempo real (onSnapshot): garante que exclusões, adições, transferências
+        // e mudanças de status feitas pelo Admin reflitam imediatamente para todos os professores
+        const unsubscribe = onSnapshot(
+            collection(db, "students"),
+            (snap) => {
+                const list = snap.docs.map(d => ({
+                    firestoreId: d.id,
+                    name: (d.data().name as string) || "",
+                    class: (d.data().class as string) || "",
+                    id: Number(d.data().id || 0),
+                    status: d.data().status as string,
+                    dispensed: d.data().dispensed
+                })) as Student[];
+
+                list.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+                setStudents(list);
+                saveToCache(list);
+                setError(null);
+                setLoading(false);
+            },
+            (err) => {
+                console.warn("Falha no listener em tempo real de alunos, acionando fallback:", err);
+                fetchStudents(true);
+            }
+        );
+
+        return () => unsubscribe();
+    }, [user, authLoading, fetchStudents, loadFromCache, saveToCache]);
 
     const getStudentsByClass = useCallback((className: string) => {
         if (!className) return [];

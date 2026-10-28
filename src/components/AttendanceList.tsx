@@ -121,8 +121,8 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     class: finalTargetClass
                 });
                 
+                await refreshStudents();
                 alert(`Estudante transferido com sucesso para a turma ${finalTargetClass}!`);
-                window.location.reload();
                 return;
             }
 
@@ -132,8 +132,8 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 id: Number(transferNewNumber)
             }, { merge: true });
 
+            await refreshStudents();
             alert(`Estudante transferido com sucesso para a turma ${finalTargetClass}!`);
-            window.location.reload();
         } catch (err) {
             console.error("Erro ao transferir aluno:", err);
             alert("Erro ao transferir o aluno.");
@@ -507,14 +507,13 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                     localStorage.setItem("mock_students", JSON.stringify(allStudents));
                 }
                 student.status = newTR ? "TR" : "";
-                window.location.reload();
+                await refreshStudents();
                 return;
             }
 
             await setDoc(doc(db, "students", student.firestoreId), { status: newTR ? "TR" : "" }, { merge: true });
             student.status = newTR ? "TR" : "";
             await refreshStudents();
-            window.location.reload();
         } catch (err) {
             console.error("Erro ao alterar status TR:", err);
             alert("Erro ao alterar intenção de transferência.");
@@ -523,19 +522,76 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
 
     const confirmDeleteStudent = async () => {
         if (!deleteCandidate) return;
+        const deletedId = deleteCandidate.id;
         setIsDeletingStudent(true);
         try {
+            const remainingStudents = students
+                .filter(s => s.firestoreId !== deletedId)
+                .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
             if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
                 const { mockDb } = await import("@/lib/mockDatabase");
-                mockDb.deleteStudent(deleteCandidate.id);
+                mockDb.deleteStudent(deletedId);
+                mockDb.removeMedicalDispensation(deletedId);
+                for (let i = 0; i < remainingStudents.length; i++) {
+                    const s = remainingStudents[i];
+                    mockDb.saveStudent({
+                        firestoreId: s.firestoreId,
+                        id: i + 1,
+                        name: s.name,
+                        class: s.class,
+                        status: s.status
+                    });
+                }
                 await refreshStudents();
-                window.location.reload();
                 return;
             }
 
-            await deleteDoc(doc(db, "students", deleteCandidate.id));
+            const today = new Date().toISOString().split("T")[0];
+            const dateKey = today.replace(/-/g, "");
+
+            const batch = writeBatch(db);
+            // 1. Remove o estudante da coleção principal
+            batch.delete(doc(db, "students", deletedId));
+            // 2. Remove estatísticas agregadas, dispensas médicas e eventual chamada lançada hoje
+            batch.delete(doc(db, "student_stats", deletedId));
+            batch.delete(doc(db, "medical_dispensations", deletedId));
+            batch.delete(doc(db, "attendance", `att_${deletedId}_${dateKey}`));
+
+            // 3. Reordena os números de chamada dos alunos restantes da turma
+            for (let i = 0; i < remainingStudents.length; i++) {
+                const s = remainingStudents[i];
+                const targetId = i + 1;
+                if (s.id !== targetId) {
+                    batch.update(doc(db, "students", s.firestoreId), { id: targetId });
+                }
+            }
+
+            await batch.commit();
+
+            // Limpa estados locais do aluno excluído
+            setAttendance(prev => {
+                const next = { ...prev };
+                delete next[deletedId];
+                return next;
+            });
+            setExistingTodayStatus(prev => {
+                const next = { ...prev };
+                delete next[deletedId];
+                return next;
+            });
+            setDispensedStudents(prev => {
+                const next = new Set(prev);
+                next.delete(deletedId);
+                return next;
+            });
+            setDispensationInfo(prev => {
+                const next = { ...prev };
+                delete next[deletedId];
+                return next;
+            });
+
             await refreshStudents();
-            window.location.reload(); // Vai recarregar a tela para puxar dados atualizados do banco
         } catch (err) {
             console.error("Erro ao excluir aluno:", err);
             alert("Falha ao excluir o aluno. Tente novamente.");
@@ -584,7 +640,6 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 }
                 
                 await refreshStudents();
-                window.location.reload();
                 return;
             }
 
@@ -611,7 +666,6 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
 
             await batch.commit();
             await refreshStudents();
-            window.location.reload(); // Recarrega tela para ver o aluno adicionado
         } catch (err) {
             console.error(err);
             alert("Erro ao adicionar aluno.");

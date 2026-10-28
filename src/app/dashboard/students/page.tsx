@@ -58,6 +58,7 @@ export default function StudentsTransferPage() {
                         ? { ...s, status: newTR ? "TR" : "" } 
                         : s
                 ));
+                await refreshStudents();
                 return;
             }
 
@@ -71,6 +72,7 @@ export default function StudentsTransferPage() {
                     ? { ...s, status: newTR ? "TR" : "" } 
                     : s
             ));
+            await refreshStudents();
         } catch (error) {
             console.error("Erro ao alterar status TR:", error);
             alert("Erro ao alterar status TR.");

@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import { collection, getDocs, query, orderBy, where } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
+import { useStudents } from "@/context/StudentsContext";
 
 type AttendanceRecord = {
     id: string;
     studentId: number;
     studentName: string;
     studentClass: string;
+    studentFirestoreId?: string;
     date: string;
     status: "P" | "F" | "D" | "A" | "TR";
     teacher: string;
@@ -18,6 +20,7 @@ const LOCK_DATE = "2026-04-06";
 
 
 export function TeacherHistory() {
+    const { students } = useStudents();
     const [records, setRecords] = useState<AttendanceRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filterDate, setFilterDate] = useState(new Date().toISOString().split("T")[0]);
@@ -66,7 +69,15 @@ export function TeacherHistory() {
     }
 
     const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
-    const filteredRecords = records;
+    const activeIds = new Set(students.map(s => s.firestoreId));
+    const activeNames = new Set(students.map(s => s.name.trim().toUpperCase()));
+    const filteredRecords = students.length > 0
+        ? records.filter(r =>
+            r.studentFirestoreId
+                ? activeIds.has(r.studentFirestoreId)
+                : activeNames.has((r.studentName || "").trim().toUpperCase())
+        )
+        : records;
     const classes = Array.from(new Set(filteredRecords.map(r => normalizeClassName(r.studentClass))));
 
     return (

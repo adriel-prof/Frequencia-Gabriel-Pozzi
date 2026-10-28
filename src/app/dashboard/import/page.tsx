@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { collection, writeBatch, doc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
+import { useStudents } from "@/context/StudentsContext";
 import Papa from "papaparse";
 
 export default function ImportPage() {
+    const { refreshStudents } = useStudents();
     const [isUploading, setIsUploading] = useState(false);
     const [feedback, setFeedback] = useState<{ type: "success" | "error", msg: string } | null>(null);
     const [preview, setPreview] = useState<{ id: string | number, name: string, class: string }[]>([]);
@@ -105,6 +107,7 @@ export default function ImportPage() {
             }
 
             await batch.commit();
+            await refreshStudents();
             setFeedback({ type: "success", msg: `${count} estudantes processados. Os alunos existentes foram remanejados e novos foram adicionados.` });
             setPreview([]);
         } catch (error) {
