@@ -24,7 +24,8 @@ interface StudentsContextType {
 
 const StudentsContext = createContext<StudentsContextType | undefined>(undefined);
 
-const CACHE_KEY = "cached_students_list_v1";
+const CACHE_KEY = "cached_students_list_v2";
+const LEGACY_CACHE_KEY = "cached_students_list_v1";
 
 const isLocalhost = () =>
     typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
@@ -38,6 +39,7 @@ export function StudentsProvider({ children }: { children: React.ReactNode }) {
     const loadFromCache = useCallback((): Student[] | null => {
         if (typeof window === "undefined") return null;
         try {
+            localStorage.removeItem(LEGACY_CACHE_KEY);
             const cachedData = localStorage.getItem(CACHE_KEY);
             if (cachedData) {
                 const parsed = JSON.parse(cachedData);
@@ -84,15 +86,11 @@ export function StudentsProvider({ children }: { children: React.ReactNode }) {
 
     const fetchStudents = useCallback(async (forceRemote = false) => {
         setError(null);
+        setLoading(true);
 
-        // 1. Hidrata imediatamente com o cache (Stale-While-Revalidate) para evitar tela em branco,
-        // mas NÃO interrompe a busca remota: sempre revalida no banco para refletir exclusões/edições.
         const cached = loadFromCache();
         if (!forceRemote && cached) {
             setStudents(cached);
-            setLoading(false);
-        } else {
-            setLoading(true);
         }
 
         // 2. Buscar da rede com até 3 retentativas
@@ -155,14 +153,9 @@ export function StudentsProvider({ children }: { children: React.ReactNode }) {
             return;
         }
 
-        // Hidrata com cache imediatamente enquanto o listener em tempo real conecta
-        const cached = loadFromCache();
-        if (cached) {
-            setStudents(cached);
-            setLoading(false);
-        } else {
-            setLoading(true);
-        }
+        // Mantém loading = true até o Firestore responder para evitar que relatórios
+        // renderizem com dados obsoletos do cache local antes da sincronização real.
+        setLoading(true);
 
         // Escuta em tempo real (onSnapshot): garante que exclusões, adições, transferências
         // e mudanças de status feitas pelo Admin reflitam imediatamente para todos os professores

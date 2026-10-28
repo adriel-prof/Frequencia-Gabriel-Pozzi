@@ -6,7 +6,7 @@ import { collection, query, where, getDocs, doc, getDoc } from "firebase/firesto
 import { db } from "@/lib/firebaseConfig";
 import { Suspense } from "react";
 
-import { useStudents } from "@/context/StudentsContext";
+import { useAuth } from "@/context/AuthContext";
 
 type AttendanceRecord = {
     studentId: number;
@@ -16,10 +16,19 @@ type AttendanceRecord = {
     studentFirestoreId?: string;
 };
 
+type ActiveStudentRecord = {
+    firestoreId: string;
+    id: number;
+    name: string;
+    class: string;
+    status?: string;
+    dispensed?: boolean;
+};
+
 function PrintAbsencesContent() {
     const searchParams = useSearchParams();
     const date = searchParams.get("date");
-    const { students: globalStudents, loading: studentsLoading } = useStudents();
+    const { loading: authLoading } = useAuth();
     
     const [absencesByClass, setAbsencesByClass] = useState<Record<string, { name: string; id: number; presenceRate: number }[]>>({});
     const [missingClasses, setMissingClasses] = useState<string[]>([]);
@@ -27,10 +36,9 @@ function PrintAbsencesContent() {
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!date) return;
+        if (!date || authLoading) return;
 
         async function fetchData() {
-            if (studentsLoading) return;
             setLoading(true);
             setErrorMsg(null);
             try {
@@ -39,14 +47,23 @@ function PrintAbsencesContent() {
                     
                     const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
                     
-                    const studentsList = mockDb.getStudents().filter(s => s.status !== "TR");
+                    const allStudents = mockDb.getStudents() as Array<ReturnType<typeof mockDb.getStudents>[number] & { dispensed?: boolean }>;
+                    const allStudentsById = new Map(allStudents.map(s => [s.firestoreId, s]));
+                    const studentsList = allStudents.filter(s => s.status !== "TR" && !s.dispensed);
                     const activeById = new Map(studentsList.map(s => [s.firestoreId, s]));
                     const activeByName = new Map(studentsList.map(s => [s.name.trim().toUpperCase(), s]));
-                    const dispensedIds = new Set(
-                        mockDb.getMedicalDispensations()
-                            .filter(d => Array.isArray(d.dates) && date ? d.dates.includes(date) : false)
-                            .map(d => d.studentFirestoreId)
-                    );
+                    const trNames = new Set(allStudents.filter(s => s.status === "TR").map(s => s.name.trim().toUpperCase()));
+
+                    const dispensedIds = new Set<string>();
+                    const dispensedNames = new Set<string>();
+                    mockDb.getMedicalDispensations().forEach(d => {
+                        const dates = Array.isArray(d.dates) ? d.dates : [];
+                        const isCovered = date ? (dates.includes(date) || (d.startDate <= date && d.endDate >= date)) : false;
+                        if (isCovered) {
+                            dispensedIds.add(d.studentFirestoreId);
+                            if (d.studentName) dispensedNames.add(d.studentName.trim().toUpperCase());
+                        }
+                    });
 
                     const recordsData = mockDb.getAttendance(date || undefined) as unknown as AttendanceRecord[];
                     const completedClassesToday = new Set<string>();
@@ -58,42 +75,45 @@ function PrintAbsencesContent() {
                         const clsNorm = normalizeClassName(data.studentClass);
                         completedClassesToday.add(clsNorm);
 
-                        const activeStudent = data.studentFirestoreId
-                            ? activeById.get(data.studentFirestoreId)
-                            : activeByName.get((data.studentName || "").trim().toUpperCase());
+                        // No relatório de faltas só devem aparecer os estudantes marcados com falta ("F")
+                        if (data.status !== "F") return;
 
-                        // Ignora alunos TR, excluídos, transferidos de turma ou com dispensa médica ativa na data
+                        const fId = data.studentFirestoreId;
+                        const normName = (data.studentName || "").trim().toUpperCase();
+                        if (trNames.has(normName)) return;
+
+                        const activeStudent = fId
+                            ? (allStudentsById.has(fId) ? activeById.get(fId) : activeByName.get(normName))
+                            : activeByName.get(normName);
+
+                        // Ignora alunos excluídos, TR, transferidos de turma ou com dispensa médica ativa na data
                         if (!activeStudent) return;
+                        if (activeStudent.status === "TR" || activeStudent.dispensed) return;
                         if (normalizeClassName(activeStudent.class) !== clsNorm) return;
-                        if (dispensedIds.has(activeStudent.firestoreId)) return;
+                        if (dispensedIds.has(activeStudent.firestoreId) || (fId && dispensedIds.has(fId)) || dispensedNames.has(activeStudent.name.trim().toUpperCase())) return;
                         
-                        if (data.status === "F") {
-                            if (!absences[clsNorm]) {
-                                absences[clsNorm] = [];
-                            }
-                            
-                            // Busca histórico deste aluno no banco mock
-                            const studentRecords = (mockDb.getAttendance() as unknown as (AttendanceRecord & { date: string })[])
-                                .filter(r => data.studentFirestoreId 
-                                    ? r.studentFirestoreId === data.studentFirestoreId 
-                                    : r.studentId === data.studentId
-                                );
-                                
-                            let total = 0;
-                            let totalAbsences = 0;
-                            
-                            studentRecords.forEach(rec => {
-                                if (rec.date >= LOCK_DATE && rec.status !== "TR" && rec.status !== "D") {
-                                    total++;
-                                    if (rec.status === "F") {
-                                        totalAbsences++;
-                                    }
-                                }
-                            });
-                            
-                            const presenceRate = total > 0 ? Math.round(((total - totalAbsences) / total) * 100) : 0;
-                            absences[clsNorm].push({ name: activeStudent.name, id: activeStudent.id, presenceRate });
+                        if (!absences[clsNorm]) {
+                            absences[clsNorm] = [];
                         }
+                        
+                        // Busca histórico deste aluno no banco mock
+                        const studentRecords = (mockDb.getAttendance() as unknown as (AttendanceRecord & { date: string })[])
+                            .filter(r => r.studentFirestoreId === activeStudent.firestoreId || r.studentName.trim().toUpperCase() === activeStudent.name.trim().toUpperCase());
+                            
+                        let total = 0;
+                        let totalAbsences = 0;
+                        
+                        studentRecords.forEach(rec => {
+                            if (rec.date >= LOCK_DATE && rec.status !== "TR" && rec.status !== "D") {
+                                total++;
+                                if (rec.status === "F") {
+                                    totalAbsences++;
+                                }
+                            }
+                        });
+                        
+                        const presenceRate = total > 0 ? Math.round(((total - totalAbsences) / total) * 100) : 0;
+                        absences[clsNorm].push({ name: activeStudent.name, id: activeStudent.id, presenceRate });
                     });
                     
                     // Ordena
@@ -112,35 +132,68 @@ function PrintAbsencesContent() {
                     return;
                 }
 
-                // Fetch attendance records and active medical dispensations for the date
-                const [snapshot, dispSnap] = await Promise.all([
+                // Busca diretamente do Firestore (attendance, medical_dispensations e students) para nunca usar cache obsoleto
+                const [snapshot, dispSnap, studentsSnap] = await Promise.all([
                     getDocs(query(collection(db, "attendance"), where("date", "==", date))),
-                    getDocs(query(collection(db, "medical_dispensations"), where("endDate", ">=", date)))
+                    getDocs(collection(db, "medical_dispensations")),
+                    getDocs(collection(db, "students"))
                 ]);
 
                 const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
 
                 const dispensedIds = new Set<string>();
+                const dispensedNames = new Set<string>();
                 dispSnap.docs.forEach(d => {
                     const dData = d.data();
                     const dates: string[] = Array.isArray(dData.dates) ? dData.dates : [];
-                    if (date && dates.includes(date)) {
-                        dispensedIds.add(dData.studentFirestoreId || d.id);
+                    const isCovered = date ? (dates.includes(date) || (dData.startDate && dData.endDate && dData.startDate <= date && dData.endDate >= date)) : false;
+                    if (isCovered) {
+                        if (dData.studentFirestoreId) dispensedIds.add(dData.studentFirestoreId);
+                        dispensedIds.add(d.id);
+                        if (dData.studentName) dispensedNames.add(String(dData.studentName).trim().toUpperCase());
                     }
                 });
 
-                const activeStudents = globalStudents.filter(s => s.status !== "TR");
-                const activeById = new Map(activeStudents.map(s => [s.firestoreId, s]));
-                const activeByName = new Map(activeStudents.map(s => [s.name.trim().toUpperCase(), s]));
+                const allStudentsById = new Map<string, ActiveStudentRecord>();
+                const activeById = new Map<string, ActiveStudentRecord>();
+                const activeByName = new Map<string, ActiveStudentRecord>();
+                const trNames = new Set<string>();
+
+                studentsSnap.docs.forEach(d => {
+                    const sData = d.data();
+                    const rec: ActiveStudentRecord = {
+                        firestoreId: d.id,
+                        id: Number(sData.id || 0),
+                        name: (sData.name as string) || "",
+                        class: (sData.class as string) || "",
+                        status: sData.status as string | undefined,
+                        dispensed: Boolean(sData.dispensed)
+                    };
+                    allStudentsById.set(d.id, rec);
+                    const normName = rec.name.trim().toUpperCase();
+                    if (rec.status === "TR") {
+                        if (normName) trNames.add(normName);
+                        return;
+                    }
+                    if (rec.dispensed) return;
+                    activeById.set(d.id, rec);
+                    if (normName) {
+                        activeByName.set(normName, rec);
+                    }
+                });
                 
                 const completedClassesToday = new Set<string>();
                 const absencesPromises: Promise<void>[] = [];
                 const absences: Record<string, { name: string; id: number; presenceRate: number }[]> = {};
+                const addedStudentsPerClass = new Map<string, Set<string>>();
 
                 snapshot.docs.forEach(docSnap => {
                     const data = docSnap.data() as AttendanceRecord;
                     const clsNorm = normalizeClassName(data.studentClass);
                     completedClassesToday.add(clsNorm);
+
+                    // No relatório de faltas só devem aparecer os estudantes marcados com falta ("F")
+                    if (data.status !== "F") return;
 
                     let fId = data.studentFirestoreId;
                     if (!fId) {
@@ -148,49 +201,55 @@ function PrintAbsencesContent() {
                         if (match) fId = match[1];
                     }
 
+                    const normName = (data.studentName || "").trim().toUpperCase();
+                    if (trNames.has(normName)) return;
+
                     const activeStudent = fId
-                        ? activeById.get(fId)
-                        : activeByName.get((data.studentName || "").trim().toUpperCase());
+                        ? (allStudentsById.has(fId) ? activeById.get(fId) : activeByName.get(normName))
+                        : activeByName.get(normName);
 
-                    if (globalStudents.length > 0) {
-                        // Ignora alunos TR, excluídos ou transferidos para outra turma
-                        if (!activeStudent) return;
-                        if (normalizeClassName(activeStudent.class as string) !== clsNorm) return;
+                    // Ignora alunos excluídos, TR, transferidos para outra turma ou com dispensa médica ativa
+                    if (!activeStudent) return;
+                    if (activeStudent.status === "TR" || activeStudent.dispensed) return;
+                    if (normalizeClassName(activeStudent.class) !== clsNorm) return;
+
+                    const resolvedId = activeStudent.firestoreId;
+                    if (dispensedIds.has(resolvedId) || (fId && dispensedIds.has(fId)) || dispensedNames.has(activeStudent.name.trim().toUpperCase())) return;
+
+                    if (!addedStudentsPerClass.has(clsNorm)) {
+                        addedStudentsPerClass.set(clsNorm, new Set());
                     }
+                    if (addedStudentsPerClass.get(clsNorm)!.has(resolvedId)) return;
+                    addedStudentsPerClass.get(clsNorm)!.add(resolvedId);
 
-                    const resolvedId = activeStudent?.firestoreId || fId;
-                    if (resolvedId && dispensedIds.has(resolvedId)) return;
-
-                    if (data.status === "F") {
-                        if (!absences[clsNorm]) {
-                            absences[clsNorm] = [];
-                        }
-                        
-                        const fetchStudentData = async () => {
-                            let presenceRate = 0;
-                            if (resolvedId) {
-                                const statsRef = doc(db, "student_stats", resolvedId);
-                                const statsSnap = await getDoc(statsRef);
-                                if (statsSnap.exists()) {
-                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    const statsData = statsSnap.data() as any;
-                                    const presences = Number(statsData?.presences || 0);
-                                    const stuAbsences = Number(statsData?.absences || 0);
-                                    const evalDays = (presences + stuAbsences) > 0
-                                        ? (presences + stuAbsences)
-                                        : Math.max(0, Number(statsData?.totalDays || 0) - Number(statsData?.dispensed || 0));
-                                    presenceRate = evalDays > 0 ? Math.round(((evalDays - stuAbsences) / evalDays) * 100) : 0;
-                                }
+                    if (!absences[clsNorm]) {
+                        absences[clsNorm] = [];
+                    }
+                    
+                    const fetchStudentData = async () => {
+                        let presenceRate = 0;
+                        if (resolvedId) {
+                            const statsRef = doc(db, "student_stats", resolvedId);
+                            const statsSnap = await getDoc(statsRef);
+                            if (statsSnap.exists()) {
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                const statsData = statsSnap.data() as any;
+                                const presences = Number(statsData?.presences || 0);
+                                const stuAbsences = Number(statsData?.absences || 0);
+                                const evalDays = (presences + stuAbsences) > 0
+                                    ? (presences + stuAbsences)
+                                    : Math.max(0, Number(statsData?.totalDays || 0) - Number(statsData?.dispensed || 0));
+                                presenceRate = evalDays > 0 ? Math.round(((evalDays - stuAbsences) / evalDays) * 100) : 0;
                             }
+                        }
 
-                            absences[clsNorm].push({
-                                name: activeStudent?.name || data.studentName,
-                                id: activeStudent?.id || data.studentId,
-                                presenceRate
-                            });
-                        };
-                        absencesPromises.push(fetchStudentData());
-                    }
+                        absences[clsNorm].push({
+                            name: activeStudent.name,
+                            id: activeStudent.id,
+                            presenceRate
+                        });
+                    };
+                    absencesPromises.push(fetchStudentData());
                 });
 
                 await Promise.all(absencesPromises);
@@ -200,8 +259,8 @@ function PrintAbsencesContent() {
                     absences[cls].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
                 });
 
-                // Fetch all classes from StudentsContext
-                const allClasses = Array.from(new Set(globalStudents.filter(d => d.status !== "TR").map(d => normalizeClassName(d.class as string))));
+                // Fetch all classes from live active students
+                const allClasses = Array.from(new Set(Array.from(activeById.values()).map(d => normalizeClassName(d.class))));
                 
                 const missing = allClasses
                     .filter(cls => !completedClassesToday.has(cls))
@@ -222,7 +281,7 @@ function PrintAbsencesContent() {
         }
 
         fetchData();
-    }, [date, globalStudents, studentsLoading]);
+    }, [date, authLoading]);
 
     if (!date) {
         return <div className="p-8 text-center text-red-500 font-bold">Data não especificada na URL.</div>;

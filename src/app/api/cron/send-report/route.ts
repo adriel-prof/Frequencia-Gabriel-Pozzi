@@ -8,17 +8,17 @@ export async function GET(request: Request) {
     try {
         const today = new Date().toISOString().split("T")[0];
 
-        // OTIMIZAÇÃO: Busca registros de HOJE, alunos ativos e dispensas médicas ativas em paralelo
+        // OTIMIZAÇÃO: Busca registros de HOJE, alunos ativos e dispensas médicas em paralelo
         const attendanceRef = adminDb.collection("attendance");
         const [todaySnapshot, studentsSnap, dispSnap] = await Promise.all([
             attendanceRef.where("date", "==", today).get(),
             adminDb.collection("students").get(),
-            adminDb.collection("medical_dispensations").where("endDate", ">=", today).get()
+            adminDb.collection("medical_dispensations").get()
         ]);
 
         // Agrupar faltosos por turma e registrar turmas concluídas
         type AttendanceDoc = { studentClass: string; studentId: number; studentName: string; status: string; date: string; studentFirestoreId?: string; };
-        type ActiveStudentInfo = { firestoreId: string; id: number; name: string; class: string; status?: string };
+        type ActiveStudentInfo = { firestoreId: string; id: number; name: string; class: string; status?: string; dispensed?: boolean };
 
         const absencesByClass: Record<string, { studentName: string; studentId: number; presenceRate: number }[]> = {};
         const completedClassesToday = new Set<string>();
@@ -26,35 +26,50 @@ export async function GET(request: Request) {
         const normalizeClassName = (name: string) => name ? name.trim().toUpperCase().replace(/°/g, 'º') : "";
 
         const dispensedIds = new Set<string>();
+        const dispensedNames = new Set<string>();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         dispSnap.docs.forEach((d: any) => {
             const dData = d.data();
             const dates: string[] = Array.isArray(dData.dates) ? dData.dates : [];
-            if (dates.includes(today)) {
-                dispensedIds.add(dData.studentFirestoreId || d.id);
+            const isCovered = dates.includes(today) || (dData.startDate && dData.endDate && dData.startDate <= today && dData.endDate >= today);
+            if (isCovered) {
+                if (dData.studentFirestoreId) dispensedIds.add(dData.studentFirestoreId);
+                dispensedIds.add(d.id);
+                if (dData.studentName) dispensedNames.add(String(dData.studentName).trim().toUpperCase());
             }
         });
 
+        const allStudentsById = new Map<string, ActiveStudentInfo>();
         const activeById = new Map<string, ActiveStudentInfo>();
         const activeByName = new Map<string, ActiveStudentInfo>();
+        const trNames = new Set<string>();
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         studentsSnap.docs.forEach((d: any) => {
             const sData = d.data();
-            if (sData.status === "TR") return;
             const info: ActiveStudentInfo = {
                 firestoreId: d.id,
                 id: Number(sData.id || 0),
                 name: sData.name || "",
                 class: sData.class || "",
-                status: sData.status
+                status: sData.status,
+                dispensed: Boolean(sData.dispensed)
             };
+            allStudentsById.set(d.id, info);
+            const normName = info.name.trim().toUpperCase();
+            if (info.status === "TR") {
+                if (normName) trNames.add(normName);
+                return;
+            }
+            if (info.dispensed) return;
             activeById.set(d.id, info);
-            if (info.name) {
-                activeByName.set(info.name.trim().toUpperCase(), info);
+            if (normName) {
+                activeByName.set(normName, info);
             }
         });
         
         const todayAbsences: { clsNorm: string; studentId: number; studentName: string; studentFirestoreId?: string }[] = [];
+        const addedStudentsPerClass = new Map<string, Set<string>>();
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         todaySnapshot.docs.forEach((doc: any) => {
@@ -62,31 +77,43 @@ export async function GET(request: Request) {
             const clsNorm = normalizeClassName(data.studentClass);
             completedClassesToday.add(clsNorm);
 
+            // No relatório de faltas só devem aparecer os estudantes marcados com falta ("F")
+            if (data.status !== "F") return;
+
             let fId = data.studentFirestoreId;
             if (!fId && typeof doc.id === "string") {
                 const match = doc.id.match(/^att_(.+?)_\d{8}$/);
                 if (match) fId = match[1];
             }
 
+            const normName = (data.studentName || "").trim().toUpperCase();
+            if (trNames.has(normName)) return;
+
             const activeStudent = fId
-                ? activeById.get(fId)
-                : activeByName.get((data.studentName || "").trim().toUpperCase());
+                ? (allStudentsById.has(fId) ? activeById.get(fId) : activeByName.get(normName))
+                : activeByName.get(normName);
 
             // Ignora alunos TR, excluídos ou transferidos para outra turma
             if (!activeStudent) return;
+            if (activeStudent.status === "TR" || activeStudent.dispensed) return;
             if (normalizeClassName(activeStudent.class) !== clsNorm) return;
 
             // Ignora alunos com dispensa médica ativa hoje
-            if (dispensedIds.has(activeStudent.firestoreId)) return;
+            const resolvedId = activeStudent.firestoreId;
+            if (dispensedIds.has(resolvedId) || (fId && dispensedIds.has(fId)) || dispensedNames.has(activeStudent.name.trim().toUpperCase())) return;
 
-            if (data.status === "F") {
-                todayAbsences.push({
-                    clsNorm,
-                    studentId: activeStudent.id || data.studentId,
-                    studentName: activeStudent.name || data.studentName,
-                    studentFirestoreId: activeStudent.firestoreId
-                });
+            if (!addedStudentsPerClass.has(clsNorm)) {
+                addedStudentsPerClass.set(clsNorm, new Set());
             }
+            if (addedStudentsPerClass.get(clsNorm)!.has(resolvedId)) return;
+            addedStudentsPerClass.get(clsNorm)!.add(resolvedId);
+
+            todayAbsences.push({
+                clsNorm,
+                studentId: activeStudent.id || data.studentId,
+                studentName: activeStudent.name || data.studentName,
+                studentFirestoreId: resolvedId
+            });
         });
 
         // Para cada aluno que faltou HOJE, buscamos a estatística acumulada em student_stats (1 leitura por aluno)

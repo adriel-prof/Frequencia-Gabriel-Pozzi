@@ -499,10 +499,16 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
                 });
 
                 // Se já houve chamada hoje para este aluno, converte imediatamente para "D" no banco
-                const oldStatus = existingTodayStatus[student.firestoreId];
+                const dateKey = today.replace(/-/g, "");
+                const attRef = doc(db, "attendance", `att_${student.firestoreId}_${dateKey}`);
+                let oldStatus: string | undefined = existingTodayStatus[student.firestoreId];
+                if (!oldStatus && dispensaDates.includes(today)) {
+                    const attSnap = await getDoc(attRef);
+                    if (attSnap.exists()) {
+                        oldStatus = attSnap.data().status as string;
+                    }
+                }
                 if (dispensaDates.includes(today) && oldStatus && oldStatus !== "D") {
-                    const dateKey = today.replace(/-/g, "");
-                    const attRef = doc(db, "attendance", `att_${student.firestoreId}_${dateKey}`);
                     batch.set(attRef, {
                         studentId: student.id,
                         studentName: student.name,
@@ -639,10 +645,17 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             batch.set(doc(db, "students", student.firestoreId), { status: newTR ? "TR" : "" }, { merge: true });
 
             // Se já existe chamada lançada hoje, atualiza imediatamente o registro de hoje e o student_stats
-            const oldStatus = existingTodayStatus[student.firestoreId];
+            const dateKey = today.replace(/-/g, "");
+            const attRef = doc(db, "attendance", `att_${student.firestoreId}_${dateKey}`);
+            let oldStatus: string | undefined = existingTodayStatus[student.firestoreId];
+            if (!oldStatus) {
+                const attSnap = await getDoc(attRef);
+                if (attSnap.exists()) {
+                    oldStatus = attSnap.data().status as string;
+                }
+            }
             if (oldStatus && oldStatus !== nextAttendanceStatus) {
-                const dateKey = today.replace(/-/g, "");
-                batch.set(doc(db, "attendance", `att_${student.firestoreId}_${dateKey}`), {
+                batch.set(attRef, {
                     studentId: student.id,
                     studentName: student.name,
                     studentClass: normalizeClassName(student.class),
@@ -723,6 +736,18 @@ export function AttendanceList({ students, onSuccess }: { students: Student[], o
             batch.delete(doc(db, "student_stats", deletedId));
             batch.delete(doc(db, "medical_dispensations", deletedId));
             batch.delete(doc(db, "attendance", `att_${deletedId}_${dateKey}`));
+
+            // Também remove quaisquer registros de presença vinculados ao aluno excluído
+            try {
+                const studentAttSnap = await getDocs(
+                    query(collection(db, "attendance"), where("studentFirestoreId", "==", deletedId))
+                );
+                studentAttSnap.docs.forEach(attDoc => {
+                    batch.delete(attDoc.ref);
+                });
+            } catch (e) {
+                console.warn("Aviso ao limpar presenças do aluno excluído:", e);
+            }
 
             // 3. Reordena os números de chamada dos alunos restantes da turma
             for (let i = 0; i < remainingStudents.length; i++) {
